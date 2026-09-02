@@ -1,0 +1,23 @@
+{
+  "name": "התרופות שלי",
+  "short_name": "תרופות",
+  "description": "ניהול ותזכורות לקיחת תרופות — אישי, גדול וברור",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f4ee",
+  "theme_color": "#f7f4ee",
+  "categories": ["health", "medical", "lifestyle"],
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "היום", "url": "./#today", "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192" }] },
+    { "name": "הוספת תרופה", "url": "./#add", "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

@@ -1,0 +1,7 @@
+.env
+.env.*
+*.log
+desktop.ini
+Thumbs.db
+.DS_Store
+assets/icon-source.png

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5">
+  <title>התרופות שלי</title>
+  <meta name="description" content="ניהול ותזכורות לקיחת תרופות — אישי, גדול וברור">
+  <meta name="theme-color" content="#f7f4ee" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16181b" media="(prefers-color-scheme: dark)">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="התרופות שלי">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="assets/icon-192.png">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&display=swap">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="hello" id="hello">שלום</div>
+    <button class="tool-btn" id="btnTorch" title="פנס" aria-label="פנס">🔦</button>
+    <button class="tool-btn" id="btnMag" title="זכוכית מגדלת" aria-label="זכוכית מגדלת">🔍</button>
+  </header>
+
+  <main>
+    <section class="view" id="view-today"></section>
+    <section class="view hidden" id="view-meds"></section>
+    <section class="view hidden" id="view-track"></section>
+    <section class="view hidden" id="view-notes"></section>
+    <section class="view hidden" id="view-settings"></section>
+    <div class="buildstamp" id="buildStamp"></div>
+  </main>
+
+  <nav class="tabbar" id="tabbar">
+    <button data-view="today"    class="on"><span class="ico">📋</span><span>היום</span></button>
+    <button data-view="meds"><span class="ico">💊</span><span>תרופות</span></button>
+    <button data-view="track"><span class="ico">📅</span><span>מעקב</span></button>
+    <button data-view="notes"><span class="ico">📝</span><span>הערות</span></button>
+    <button data-view="settings"><span class="ico">⚙️</span><span>הגדרות</span></button>
+  </nav>
+
+  <!-- ===== התזכורת הגדולה ===== -->
+  <div class="overlay hidden" id="reminder" role="dialog" aria-modal="true" aria-label="תזכורת לקיחת תרופה">
+    <div class="reminder-body" id="reminderBody"></div>
+    <div class="reminder-actions" id="reminderActions"></div>
+  </div>
+
+  <!-- ===== זכוכית מגדלת ===== -->
+  <div class="overlay hidden" id="magnifier">
+    <video id="magVideo" playsinline muted></video>
+    <button class="mag-close" id="magClose" aria-label="סגירה">✕</button>
+    <div class="mag-controls">
+      <div class="row"><span class="mag-zoomlabel" id="magZoomLabel">הגדלה ×1.0</span></div>
+      <input type="range" id="magZoom" min="1" max="8" step="0.1" value="1" aria-label="הגדלה">
+      <div class="row">
+        <button class="mag-btn" id="magTorch">🔦 פנס</button>
+        <button class="mag-btn" id="magFreeze">⏸ הקפאה</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== מסך שבת / יום שקט ===== -->
+  <div class="overlay hidden" id="shabbat">
+    <div class="shab-head">
+      <div class="shab-clock" id="shabClock">--:--</div>
+      <div class="shab-date" id="shabDate"></div>
+    </div>
+    <div class="shab-list" id="shabList"></div>
+    <div class="shab-foot">
+      <button class="btn ghost grow" id="shabClose">חזרה למסך הרגיל</button>
+    </div>
+  </div>
+
+  <!-- ===== גיליון תחתון ===== -->
+  <div class="sheet hidden" id="sheet">
+    <div class="sheet-panel" id="sheetPanel">
+      <div class="grab"></div>
+      <div class="sheet-head">
+        <h2 id="sheetTitle"></h2>
+        <button class="sheet-close" id="sheetClose" aria-label="סגירה">✕</button>
+      </div>
+      <div id="sheetBody"></div>
+    </div>
+  </div>
+
+  <div id="toasts" aria-live="polite"></div>
+
+  <input type="file" id="filePicker" accept="image/*" capture="environment" class="hidden">
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
