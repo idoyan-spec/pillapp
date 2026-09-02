@@ -1,7 +1,7 @@
 // ============================================================
 //  store.js  —  מודל הנתונים + שמירה מקומית
 // ============================================================
-export const BUILD = '2026-09-02 20:10 v2 first-release';
+export const BUILD = '2026-09-02 21:05 v3 dual-photo-id';
 
 const KEY = 'pillapp.state.v1';
 
@@ -68,7 +68,43 @@ export function load() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { saved = null; }
   state = saved ? deepMerge(defaults(), saved) : defaults();
+  migrate();
   return state;
+}
+
+/** התאמות לנתונים שנשמרו בגרסאות קודמות */
+function migrate() {
+  for (const m of state.meds) {
+    if (m.photo && !m.photoBox && !m.photoPill) { m.photoBox = m.photo; m.photoMain = 'box'; }
+    if (!m.pill) m.pill = { color: '', shape: '', imprint: '', scored: false };
+    if (!m.photoMain) m.photoMain = 'pill';
+    if (m.englishName === undefined) m.englishName = '';
+  }
+}
+
+/** התמונה שמוצגת גדול. נופל אחורה לכל תמונה שקיימת. */
+export function medPhoto(med) {
+  if (!med) return '';
+  const want = med.photoMain === 'box' ? med.photoBox : med.photoPill;
+  return want || med.photoPill || med.photoBox || med.photo || '';
+}
+
+/** התמונה המשנית, אם יש שתיים */
+export function medPhotoAlt(med) {
+  if (!med) return '';
+  const main = medPhoto(med);
+  const other = (main === med.photoPill) ? med.photoBox : med.photoPill;
+  return (other && other !== main) ? other : '';
+}
+
+/** תיאור הכדור לשורת בטיחות: "לבן · עגול · TEVA 109" */
+export function pillDescription(med) {
+  const p = (med && med.pill) || {};
+  const bits = [];
+  if (p.color) bits.push(p.color);
+  if (p.shape) bits.push(p.shape);
+  if (p.imprint) bits.push(p.imprint);
+  return bits.join(' · ');
 }
 
 let saveTimer = null;
@@ -140,7 +176,10 @@ export function newMed(partial) {
     strength: '',
     form: 'טבליה',
     doseText: '1',
-    photo: '',
+    photoBox: '',                 // תמונת האריזה
+    photoPill: '',                // תמונת הכדור עצמו
+    photoMain: 'pill',            // מה מוצג גדול בתזכורת: 'pill' | 'box'
+    pill: { color: '', shape: '', imprint: '', scored: false },
     color: pickColor(),
     schedule: { type: 'daily', times: ['08:00'], weekdays: [0, 1, 2, 3, 4, 5, 6], intervalDays: 1, startDate: ymd() },
     condition: 'none',

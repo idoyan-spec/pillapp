@@ -192,7 +192,8 @@ function doseCard(slot, now) {
   });
 
   const pic = el('div', { class: 'pic' });
-  if (m.photo) pic.appendChild(el('img', { src: m.photo, alt: '' }));
+  const ph = S.medPhoto(m);
+  if (ph) pic.appendChild(el('img', { src: ph, alt: '' }));
   else pic.textContent = '💊';
   card.appendChild(pic);
 
@@ -274,7 +275,8 @@ function renderMeds() {
       onclick: () => openMedEditor(m)
     });
     const pic = el('div', { class: 'pic' });
-    if (m.photo) pic.appendChild(el('img', { src: m.photo, alt: '' }));
+    const ph = S.medPhoto(m);
+    if (ph) pic.appendChild(el('img', { src: ph, alt: '' }));
     else pic.textContent = '💊';
     row.appendChild(pic);
 
@@ -741,12 +743,33 @@ export function openReminder(slot, nagCount) {
   body.appendChild(el('div', { class: 'reminder-kicker', text: T.reminderTitle(m, slot.id) }));
 
   const pic = el('div', { class: 'reminder-pic' });
-  if (m.photo) pic.appendChild(el('img', { src: m.photo, alt: m.name }));
+  const mainPh = S.medPhoto(m);
+  if (mainPh) pic.appendChild(el('img', { src: mainPh, alt: m.name }));
   else pic.textContent = '💊';
-  body.appendChild(pic);
+  const altPh = S.medPhotoAlt(m);
+  if (altPh) {
+    // תמונה משנית קטנה — לחיצה מחליפה ביניהן, כדי להשוות כדור מול אריזה
+    const alt = el('img', {
+      class: 'reminder-pic-alt', src: altPh, alt: 'התמונה השנייה', title: 'החלפה',
+      onclick: () => {
+        m.photoMain = (m.photoMain === 'box') ? 'pill' : 'box';
+        S.upsertMed(m);
+        openReminder(slot, nagCount);
+      }
+    });
+    const wrap = el('div', { style: 'position:relative' });
+    wrap.appendChild(pic);
+    wrap.appendChild(alt);
+    body.appendChild(wrap);
+  } else {
+    body.appendChild(pic);
+  }
 
   body.appendChild(el('div', { class: 'reminder-name', text: m.name }));
   body.appendChild(el('div', { class: 'reminder-dose', text: T.doseText(m) + (m.strength ? ' · ' + m.strength : '') }));
+
+  const pd = S.pillDescription(m);
+  if (pd) body.appendChild(el('div', { class: 'reminder-pill', text: '💊 ' + pd }));
 
   const cond = T.conditionText(m);
   if (cond) body.appendChild(el('div', { class: 'reminder-cond', text: cond }));
@@ -945,7 +968,8 @@ function paintShabbat() {
   slots.forEach(s => {
     const item = el('div', { class: 'shab-item' + (s.status ? ' done' : '') });
     const pic = el('div', { class: 'pic' });
-    if (s.med.photo) pic.appendChild(el('img', { src: s.med.photo, alt: '' }));
+    const ph = S.medPhoto(s.med);
+    if (ph) pic.appendChild(el('img', { src: ph, alt: '' }));
     else pic.textContent = '💊';
     item.appendChild(pic);
     item.appendChild(el('div', {}, [

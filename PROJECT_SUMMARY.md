@@ -8,7 +8,7 @@
 
 **חי בכתובת:** <https://idoyan-spec.github.io/pillapp/>
 **Repo:** <https://github.com/idoyan-spec/pillapp> (ציבורי)
-**גרסה:** `2026-09-02 20:10 v2 first-release` — מוצגת בתחתית כל מסך.
+**גרסה:** `2026-09-02 21:05 v3 dual-photo-id` — מוצגת בתחתית כל מסך.
 
 ## קבצים עיקריים
 
@@ -40,7 +40,7 @@
 - Web Speech API (`speechSynthesis`, he-IL) + WebAudio לצלילים מסונתזים
 - MediaDevices: `torch` ו-`zoom` constraints (פנס + זכוכית מגדלת)
 - DeviceMotion API, Geolocation API
-- **Gemini 3.8 Flash** — vision + `responseSchema` לזיהוי מצילום, `google_search` grounding לכרטיס מידע
+- **Gemini 3.8 Flash** — צינור דו-שלבי: vision + `responseSchema` לקריאה ויזואלית, ואז `google_search` grounding להשלמה וזיהוי
 - אחסון: localStorage בלבד
 
 ## איך להשתמש
@@ -86,4 +86,5 @@ curl -s https://idoyan-spec.github.io/pillapp/js/store.js | grep "BUILD ="
 
 | תאריך | שינוי |
 |--------|-------|
+| 2026-09-02 | v3 — שני מקומות תמונה (אריזה + כדור), צינור זיהוי דו-שלבי עם מילוי אוטומטי מלא מהאריזה, וגידור בטיחותי של זיהוי-לפי-כדור (לא ממלא בלי אישור). תיאור הכדור בתזכורת |
 | 2026-09-02 | בנייה מאפס — כל היכולות, אימות ב-Chrome, אייקונים, קיצור דרך ואייקון תיקייה, פרסום ל-GitHub Pages ואימות שהגרסה החיה היא v2 |

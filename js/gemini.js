@@ -60,77 +60,134 @@ function parseJson(text) {
 }
 
 // ------------------------------------------------------------
-//  1) זיהוי תרופה מצילום של אריזה / מרשם / דף הוראות
+//  1) שלב א׳: קריאה ויזואלית של מה שבאמת נראה בתמונות
+//     (responseSchema, בלי חיפוש — כדי שלא ימציא מה שלא רואים)
 // ------------------------------------------------------------
-const MED_SCHEMA = {
+const VISUAL_SCHEMA = {
   type: 'object',
   properties: {
-    name:         { type: 'string', description: 'שם התרופה כפי שמופיע, בעברית אם קיים' },
+    name:         { type: 'string', description: 'שם התרופה כפי שמופיע על האריזה, בעברית אם קיים' },
     nameEnglish:  { type: 'string' },
     genericName:  { type: 'string', description: 'החומר הפעיל' },
     strength:     { type: 'string', description: 'למשל 50 מ"ג' },
     form:         { type: 'string', description: 'טבליה / כמוסה / טיפות / סירופ / משאף / משחה / זריקה / מדבקה / שקית / אחר' },
-    doseText:     { type: 'string', description: 'כמה יחידות בכל לקיחה, מספר בלבד אם ידוע' },
+    doseText:     { type: 'string', description: 'כמה יחידות בכל לקיחה, מספר בלבד' },
     timesPerDay:  { type: 'integer' },
     suggestedTimes: { type: 'array', items: { type: 'string' }, description: 'שעות בפורמט HH:MM' },
     condition:    { type: 'string', description: 'אחד מ: none, before_food, with_food, after_food, empty_stomach, with_water, bedtime, morning_fast' },
     conditionText:{ type: 'string' },
-    packSize:     { type: 'integer', description: 'כמה יחידות באריזה' },
-    notes:        { type: 'string' },
+    packSize:     { type: 'integer', description: 'כמה יחידות באריזה שלמה' },
+    regNumber:    { type: 'string', description: 'מספר רישום משרד הבריאות, אם מופיע' },
+    manufacturer: { type: 'string' },
+    expiry:       { type: 'string', description: 'תאריך תפוגה אם מופיע' },
+    pillColor:    { type: 'string', description: 'צבע הכדור עצמו' },
+    pillShape:    { type: 'string', description: 'עגול / אליפסה / כמוסה / משולש / מרובע / אחר' },
+    pillImprint:  { type: 'string', description: 'החריטה/ההטבעה על הכדור, בדיוק כפי שהיא' },
+    pillScored:   { type: 'boolean', description: 'האם יש קו חציה' },
+    sawBox:       { type: 'boolean', description: 'האם באמת נראתה אריזה או דף הוראות' },
+    sawPill:      { type: 'boolean', description: 'האם באמת נראה כדור' },
     confidence:   { type: 'string', description: 'high / medium / low' }
   },
-  required: ['name']
+  required: ['confidence']
 };
 
-export async function extractMedFromPhoto(dataUrl) {
+function imgPart(dataUrl) {
   const m = dataUrl.match(/^data:(image\/[a-z+]+);base64,(.+)$/i);
   if (!m) throw new Error('התמונה לא נקראה כראוי.');
-  const prompt = [
-    'בתמונה יש אריזת תרופה, מרשם, או דף הוראות מבית מרקחת.',
-    'חלץ את פרטי התרופה. אם פרט לא מופיע בתמונה — השאר אותו ריק, אל תמציא.',
-    'שים לב במיוחד למינון (מ"ג), לצורת המתן, ולהוראות התדירות ("פעמיים ביום", "בבוקר ובערב", "לפני האוכל").',
-    'אם ההוראות מציינות תדירות אבל לא שעות — הצע שעות סבירות ב-suggestedTimes.',
-    'החזר JSON בלבד.'
-  ].join(' ');
+  return { inline_data: { mime_type: m[1], data: m[2] } };
+}
+
+export async function extractFromPhotos(photos) {
+  const parts = [];
+  if (photos.box) { parts.push({ text: 'תמונה 1 — אריזה / מרשם / דף הוראות:' }); parts.push(imgPart(photos.box)); }
+  if (photos.pill) { parts.push({ text: 'תמונה — הכדור עצמו:' }); parts.push(imgPart(photos.pill)); }
+  if (!parts.length) throw new Error('אין תמונה לנתח.');
+
+  parts.push({
+    text: [
+      'חלץ כל פרט שנראה בפועל בתמונות. אל תמציא — פרט שאינו נראה יישאר ריק.',
+      'מהאריזה: שם, חומר פעיל, חוזק, צורה, גודל אריזה, מספר רישום, יצרן, ותאריך תפוגה.',
+      'שים לב במיוחד להוראות מינון ותדירות ("פעמיים ביום", "בבוקר ובערב", "לפני האוכל").',
+      'אם יש תדירות בלי שעות — הצע שעות סבירות ב-suggestedTimes בפורמט HH:MM.',
+      'מהכדור: קרא בדיוק את החריטה/ההטבעה (pillImprint) כולל אותיות, ספרות וסימנים,',
+      'וכן צבע, צורה, והאם יש קו חציה.',
+      'סמן ב-sawBox / sawPill מה באמת נראה בתמונות.',
+      'החזר JSON בלבד.'
+    ].join('\n')
+  });
 
   const r = await call({
-    contents: [{
-      role: 'user',
-      parts: [
-        { inline_data: { mime_type: m[1], data: m[2] } },
-        { text: prompt }
-      ]
-    }],
+    contents: [{ role: 'user', parts: parts }],
     generationConfig: {
       temperature: 0.1,
       responseMimeType: 'application/json',
-      responseSchema: MED_SCHEMA
+      responseSchema: VISUAL_SCHEMA
     }
   });
   return parseJson(r.text);
 }
 
 // ------------------------------------------------------------
-//  2) כרטיס מידע מלא על התרופה (עם חיפוש מקורקע)
+//  2) שלב ב׳: חיפוש מקורקע — משלים את כל מה שאין על האריזה
 // ------------------------------------------------------------
-export async function fetchDrugInfo(name, strength) {
-  const q = name + (strength ? ' ' + strength : '');
-  const prompt = [
-    'חפש מידע עדכני על התרופה "' + q + '" (ישראל).',
-    'התבסס על מאגר התרופות של משרד הבריאות, העלון לצרכן, ואתרי תרופות מהימנים.',
-    'כתוב הכול בעברית פשוטה וברורה, לקורא לא-רפואי מבוגר.',
-    'ב-redWarnings שים רק אזהרות שבאמת קריטיות — דברים שעלולים לגרום נזק אם לא יודעים אותם.',
-    'ב-otherNames פרט שמות מסחריים מקבילים וגם את השם הגנרי.',
-    'החזר JSON בלבד, ללא טקסט נוסף, לפי המבנה:',
-    '{"brandName":"","englishName":"","genericName":"","otherNames":[],',
-    '"whatFor":"","howItWorks":"","redWarnings":[],"howToTake":"",',
-    '"missedDose":"","sideEffectsCommon":[],"sideEffectsSerious":[],',
-    '"interactions":[],"foodDrink":"","storage":"","prescriptionOnly":true,',
-    '"basketStatus":""}'
-  ].join('\n');
+const INFO_SHAPE =
+  '{"identified":true,"matchConfidence":"high|medium|low","mismatchWarning":"",' +
+  '"brandName":"","englishName":"","genericName":"","otherNames":[],' +
+  '"strength":"","form":"","typicalDose":"","typicalTimesPerDay":1,' +
+  '"typicalCondition":"none|before_food|with_food|after_food|empty_stomach|with_water|bedtime|morning_fast",' +
+  '"typicalConditionText":"","suggestedTimes":[],' +
+  '"whatFor":"","howItWorks":"","redWarnings":[],"howToTake":"","missedDose":"",' +
+  '"sideEffectsCommon":[],"sideEffectsSerious":[],"interactions":[],' +
+  '"foodDrink":"","storage":"","prescriptionOnly":true,"basketStatus":""}';
+
+/**
+ * @param {object} v  תוצאת extractFromPhotos, או {name, strength} לחיפוש ידני
+ */
+export async function lookupDrug(v) {
+  const known = [];
+  if (v.name) known.push('שם על האריזה: "' + v.name + '"');
+  if (v.nameEnglish) known.push('שם באנגלית: "' + v.nameEnglish + '"');
+  if (v.genericName) known.push('חומר פעיל: "' + v.genericName + '"');
+  if (v.strength) known.push('חוזק: ' + v.strength);
+  if (v.regNumber) known.push('מספר רישום משרד הבריאות: ' + v.regNumber);
+  if (v.manufacturer) known.push('יצרן: ' + v.manufacturer);
+
+  const pill = [];
+  if (v.pillImprint) pill.push('חריטה "' + v.pillImprint + '"');
+  if (v.pillColor) pill.push('צבע ' + v.pillColor);
+  if (v.pillShape) pill.push('צורה ' + v.pillShape);
+  if (v.pillScored) pill.push('עם קו חציה');
+
+  const hasName = !!(v.name || v.nameEnglish || v.genericName);
+  const lines = [];
+
+  if (hasName) {
+    lines.push('זהה ומצא מידע עדכני על התרופה הבאה (ישראל):');
+    lines.push(known.join(', ') + '.');
+    if (pill.length) {
+      lines.push('נוסף לכך צולם הכדור עצמו: ' + pill.join(', ') + '.');
+      lines.push('בדוק אם תיאור הכדור תואם לתרופה שעל האריזה. אם יש אי-התאמה ברורה —');
+      lines.push('כתוב אותה ב-mismatchWarning בניסוח מובן, כי זה עלול להעיד על כדור שגוי באריזה.');
+    }
+    lines.push('identified=true אם זיהית את התרופה בוודאות.');
+  } else {
+    lines.push('נסה לזהות תרופה לפי תיאור הכדור בלבד: ' + pill.join(', ') + '.');
+    lines.push('חפש במאגרי חריטות של כדורים (pill imprint identifier) ובמאגר משרד הבריאות.');
+    lines.push('זהירות: זיהוי לפי חריטה בלבד אינו ודאי. אם אינך בטוח לחלוטין —');
+    lines.push('החזר identified=false ו-matchConfidence="low", ואל תמציא שם תרופה.');
+    lines.push('אם הצורה או הצבע אינם תואמים לתרופה שמצאת — כתוב זאת ב-mismatchWarning.');
+  }
+
+  lines.push('');
+  lines.push('השלם את כל השדות שאתה יודע: שם גנרי, שמות מסחריים מקבילים, מינון מקובל,');
+  lines.push('כמה פעמים ביום, תנאי לקיחה, ושעות סבירות ב-suggestedTimes (HH:MM).');
+  lines.push('כתוב הכול בעברית פשוטה וברורה, לקורא לא-רפואי מבוגר.');
+  lines.push('ב-redWarnings שים רק אזהרות שבאמת קריטיות — דברים שעלולים לגרום נזק אם לא יודעים אותם.');
+  lines.push('החזר JSON בלבד, ללא טקסט נוסף, לפי המבנה:');
+  lines.push(INFO_SHAPE);
 
   const r = await call({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    contents: [{ role: 'user', parts: [{ text: lines.join('\n') }] }],
     tools: [{ google_search: {} }],
     generationConfig: { temperature: 0.2 }
   });
@@ -138,7 +195,37 @@ export async function fetchDrugInfo(name, strength) {
   const info = parseJson(r.text);
   info.sources = r.sources;
   info.fetchedAt = Date.now();
+  info.fromPillOnly = !hasName;
   return info;
+}
+
+/** כרטיס המידע של כפתור ה-ℹ️ */
+export async function fetchDrugInfo(name, strength) {
+  return lookupDrug({ name: name, strength: strength });
+}
+
+// ------------------------------------------------------------
+//  3) הצינור המלא: תמונות ← שדות + כרטיס מידע
+// ------------------------------------------------------------
+export async function identify(photos, onProgress) {
+  onProgress = onProgress || function () { };
+  onProgress('reading', 'קורא את התמונה…');
+  const visual = await extractFromPhotos(photos);
+
+  const hasAnything = visual.name || visual.nameEnglish || visual.genericName || visual.pillImprint;
+  if (!hasAnything) return { visual: visual, info: null };
+
+  onProgress('searching', visual.name
+    ? 'מחפש מידע על ' + visual.name + '…'
+    : 'מנסה לזהות לפי החריטה…');
+
+  let info = null;
+  try {
+    info = await lookupDrug(visual);
+  } catch (e) {
+    console.warn('[pillApp] חיפוש המידע נכשל:', e.message);
+  }
+  return { visual: visual, info: info };
 }
 
 // ------------------------------------------------------------

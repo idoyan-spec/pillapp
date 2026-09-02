@@ -30,37 +30,63 @@ function build(m, isNew, opts) {
   opts = opts || {};
   const wrap = el('div');
 
-  // ---------- תמונה ----------
-  const picBox = el('div', {
-    class: 'reminder-pic',
-    style: 'width:150px;height:150px;margin:0 auto 12px;font-size:3.4em;border-radius:22px'
-  });
-  function paintPic() {
-    picBox.innerHTML = '';
-    if (m.photo) picBox.appendChild(el('img', { src: m.photo, alt: '' }));
-    else picBox.textContent = '💊';
-  }
-  paintPic();
-  wrap.appendChild(picBox);
+  // ---------- שתי תמונות: אריזה + כדור ----------
+  const photoGrid = el('div', { class: 'photo-grid' });
+  wrap.appendChild(photoGrid);
 
-  const aiStatus = el('div', { class: 'hint center', style: 'margin-bottom:10px' });
-
-  const picRow = el('div', { class: 'row', style: 'gap:8px;margin-bottom:6px' });
-  picRow.appendChild(el('button', {
-    class: 'btn ghost grow', html: '📷 צילום', onclick: () => pickPhoto('camera')
-  }));
-  picRow.appendChild(el('button', {
-    class: 'btn ghost grow', html: '🖼️ מהגלריה', onclick: () => pickPhoto('gallery')
-  }));
-  if (m.photo) {
-    picRow.appendChild(el('button', {
-      class: 'btn ghost', html: '🗑', onclick: () => { m.photo = ''; paintPic(); }
-    }));
-  }
-  wrap.appendChild(picRow);
+  const aiStatus = el('div', { class: 'ai-status hidden' });
   wrap.appendChild(aiStatus);
 
-  function pickPhoto(source) {
+  const SLOTS = [
+    { key: 'photoBox', main: 'box', icon: '📦', label: 'אריזה', hint: 'הצד שכתוב עליו השם והמינון' },
+    { key: 'photoPill', main: 'pill', icon: '💊', label: 'הכדור', hint: 'כדור אחד, מקרוב, על רקע בהיר' }
+  ];
+
+  function paintPhotos() {
+    photoGrid.innerHTML = '';
+    SLOTS.forEach(sl => {
+      const has = !!m[sl.key];
+      const cell = el('div', { class: 'photo-slot' + (has ? ' has' : '') });
+      const frame = el('div', {
+        class: 'photo-frame', onclick: () => pickPhoto(sl.key, 'camera')
+      });
+      if (has) frame.appendChild(el('img', { src: m[sl.key], alt: sl.label }));
+      else frame.appendChild(el('span', { class: 'ph-icon', text: sl.icon }));
+      cell.appendChild(frame);
+      cell.appendChild(el('div', { class: 'photo-label', text: sl.icon + ' ' + sl.label }));
+
+      if (has) {
+        const row = el('div', { class: 'row', style: 'gap:6px;margin-top:6px' });
+        row.appendChild(el('button', {
+          class: 'chip' + (m.photoMain === sl.main ? ' on' : ''),
+          style: 'flex:1;justify-content:center;min-height:40px;font-size:.8em',
+          text: m.photoMain === sl.main ? '★ בתזכורת' : 'הצג בתזכורת',
+          onclick: () => { m.photoMain = sl.main; paintPhotos(); }
+        }));
+        row.appendChild(el('button', {
+          class: 'chip', style: 'min-height:40px;padding:0 12px',
+          html: '🗑', title: 'מחיקה',
+          onclick: () => { m[sl.key] = ''; paintPhotos(); }
+        }));
+        cell.appendChild(row);
+      } else {
+        cell.appendChild(el('div', { class: 'hint center', style: 'margin-top:4px', text: sl.hint }));
+      }
+      photoGrid.appendChild(cell);
+    });
+
+    const any = m.photoBox || m.photoPill;
+    idBtn.classList.toggle('hidden', !any);
+    idBtn.innerHTML = m.photoBox && m.photoPill
+      ? '✨ זהה ומלא הכול (אריזה + כדור)'
+      : m.photoBox ? '✨ זהה ומלא הכול מהאריזה' : '✨ נסה לזהות לפי הכדור';
+  }
+
+  const idBtn = el('button', { class: 'btn block hidden', style: 'margin-bottom:12px' });
+  idBtn.addEventListener('click', runIdentify);
+  wrap.appendChild(idBtn);
+
+  function pickPhoto(key, source) {
     const input = document.querySelector('#filePicker');
     if (source === 'gallery') input.removeAttribute('capture');
     else input.setAttribute('capture', 'environment');
@@ -69,51 +95,198 @@ function build(m, isNew, opts) {
       const f = input.files && input.files[0];
       if (!f) return;
       try {
-        m.photo = await Tools.fileToDataUrl(f, 900);
-        paintPic();
-        await tryIdentify();
+        m[key] = await Tools.fileToDataUrl(f, 1100);
+        if (key === 'photoPill') m.photoMain = 'pill';
+        paintPhotos();
+        if (S.state.settings.geminiKey) runIdentify();
+        else {
+          aiStatus.classList.remove('hidden');
+          aiStatus.className = 'ai-status info';
+          aiStatus.innerHTML = 'התמונה נשמרה. כדי שהאפליקציה תמלא את הפרטים לבד — הוסיפי מפתח Gemini ב<b>הגדרות</b>.';
+        }
       } catch (e) { toast(e.message, 'error'); }
     };
     input.click();
   }
 
-  if (opts.startWithCamera) setTimeout(() => pickPhoto('camera'), 250);
+  paintPhotos();
+  if (opts.startWithCamera) setTimeout(() => pickPhoto('photoBox', 'camera'), 250);
 
-  async function tryIdentify() {
-    if (!S.state.settings.geminiKey) {
-      aiStatus.innerHTML = 'התמונה נשמרה. כדי שהאפליקציה תזהה את התרופה לבד — הוסיפי מפתח Gemini בהגדרות.';
-      return;
-    }
+  // ---------- הצינור: קריאה ויזואלית ← חיפוש מקורקע ← מילוי ----------
+  let busy = false;
+
+  async function runIdentify() {
+    if (busy) return;
+    if (!S.state.settings.geminiKey) { toast('צריך מפתח Gemini בהגדרות', 'warn', true); return; }
+    busy = true;
+    idBtn.disabled = true;
+    aiStatus.classList.remove('hidden');
+    aiStatus.className = 'ai-status';
     aiStatus.innerHTML = '<span class="busy"></span> קורא את התמונה…';
+
     try {
-      const r = await G.extractMedFromPhoto(m.photo);
-      let filled = 0;
-      const setIf = (field, val) => {
-        if (val && !String(fields[field].value || '').trim()) { fields[field].value = val; filled++; }
-      };
-      setIf('name', r.name);
-      setIf('genericName', r.genericName);
-      setIf('strength', r.strength);
-      if (r.nameEnglish) m.englishName = r.nameEnglish;
-      if (r.form && FORMS.indexOf(r.form) !== -1) fields.form.value = r.form;
-      if (r.doseText) fields.doseText.value = String(r.doseText).replace(/[^\d.,/]/g, '') || fields.doseText.value;
-      if (r.condition && CONDITIONS[r.condition]) fields.condition.value = r.condition;
-      if (r.conditionText && !fields.conditionText.value) fields.conditionText.value = r.conditionText;
-      if (r.packSize && !fields.packSize.value) {
-        fields.packSize.value = r.packSize;
-        if (!fields.countOnHand.value) fields.countOnHand.value = r.packSize;
-      }
-      if (r.suggestedTimes && r.suggestedTimes.length && m.schedule.times.length <= 1) {
-        m.schedule.times = r.suggestedTimes.filter(t => /^\d{2}:\d{2}$/.test(t));
-        if (!m.schedule.times.length) m.schedule.times = ['08:00'];
-        paintTimes();
-      }
-      const conf = r.confidence === 'low' ? ' (זיהוי לא בטוח — כדאי לבדוק)' : '';
-      aiStatus.innerHTML = filled
-        ? '✅ זוהה: <b>' + esc(r.name || '') + '</b>' + esc(conf) + '. בדקי שהכול נכון.'
-        : 'קראתי את התמונה אבל לא הצלחתי להוסיף פרטים חדשים.';
+      const r = await G.identify(
+        { box: m.photoBox, pill: m.photoPill },
+        (stage, msg) => { aiStatus.innerHTML = '<span class="busy"></span> ' + esc(msg); }
+      );
+      applyIdentification(r.visual, r.info);
     } catch (e) {
+      aiStatus.className = 'ai-status warn';
       aiStatus.innerHTML = '⚠️ ' + esc(e.message);
+    }
+    busy = false;
+    idBtn.disabled = false;
+  }
+
+  /** מחליט מה למלא אוטומטית ומה דורש אישור מפורש */
+  function applyIdentification(v, info) {
+    // תיאור הכדור נשמר תמיד — הוא נקרא מהתמונה, לא מנוחש
+    m.pill = {
+      color: v.pillColor || m.pill.color || '',
+      shape: v.pillShape || m.pill.shape || '',
+      imprint: v.pillImprint || m.pill.imprint || '',
+      scored: v.pillScored !== undefined ? !!v.pillScored : !!m.pill.scored
+    };
+
+    const fromBox = !!(v.name || v.nameEnglish || v.genericName);
+    const trusted = fromBox || (info && info.identified === true && info.matchConfidence === 'high');
+
+    if (trusted) {
+      const n = fill(v, info);
+      renderReview(v, info, n, false);
+    } else {
+      // זיהוי לפי כדור בלבד — לא ממלאים כלום בלי אישור מפורש
+      renderReview(v, info, 0, true);
+    }
+  }
+
+  /** ממלא את הטופס. האריזה קודמת לחיפוש; החיפוש משלים חורים בלבד. */
+  function fill(v, info) {
+    info = info || {};
+    let n = 0;
+    const setIf = (f, val) => {
+      if (!val) return;
+      if (String(fields[f].value || '').trim()) return;
+      fields[f].value = val; n++;
+    };
+
+    setIf('name', v.name || info.brandName || info.genericName);
+    setIf('genericName', v.genericName || info.genericName);
+    setIf('strength', v.strength || info.strength);
+    m.englishName = v.nameEnglish || info.englishName || m.englishName || '';
+
+    const form = v.form || info.form;
+    if (form && FORMS.indexOf(form) !== -1) { fields.form.value = form; n++; }
+
+    const dose = v.doseText || info.typicalDose;
+    if (dose) {
+      const clean = String(dose).replace(/[^\d.,/]/g, '');
+      if (clean && (!fields.doseText.value || fields.doseText.value === '1')) { fields.doseText.value = clean; n++; }
+    }
+
+    const cond = v.condition || info.typicalCondition;
+    if (cond && CONDITIONS[cond] && fields.condition.value === 'none') { fields.condition.value = cond; n++; }
+    setIf('conditionText', v.conditionText || info.typicalConditionText);
+
+    const pack = v.packSize;
+    if (pack && !fields.packSize.value) {
+      fields.packSize.value = pack; n++;
+      if (!fields.countOnHand.value) fields.countOnHand.value = pack;
+    }
+
+    // שעות — מהאריזה, ואם אין, לפי התדירות המקובלת
+    let times = (v.suggestedTimes || []).filter(t => /^\d{1,2}:\d{2}$/.test(t));
+    if (!times.length) times = (info.suggestedTimes || []).filter(t => /^\d{1,2}:\d{2}$/.test(t));
+    if (!times.length && info.typicalTimesPerDay) {
+      times = ({ 1: ['08:00'], 2: ['08:00', '20:00'], 3: ['08:00', '14:00', '20:00'], 4: ['08:00', '12:00', '16:00', '20:00'] })[info.typicalTimesPerDay] || [];
+    }
+    times = times.map(t => t.length === 4 ? '0' + t : t);
+    if (times.length && m.schedule.times.length <= 1) {
+      m.schedule.times = times; paintTimes(); n++;
+    }
+
+    // כרטיס המידע נשמר כבר עכשיו — כך שכפתור ℹ️ מלא מיד אחרי השמירה
+    if (info.redWarnings || info.whatFor) {
+      m.info = info;
+      m.infoFetchedAt = Date.now();
+      n++;
+    }
+    return n;
+  }
+
+  /** פאנל סקירה — מה זוהה, באיזו ודאות, ומה דורש אישור */
+  function renderReview(v, info, filledCount, needsConfirm) {
+    info = info || {};
+    aiStatus.className = 'ai-status ' + (needsConfirm ? 'warn' : 'ok');
+    aiStatus.innerHTML = '';
+
+    const title = v.name || info.brandName || (info.identified ? info.genericName : '');
+
+    if (needsConfirm) {
+      aiStatus.appendChild(el('div', { class: 'ai-head', html: '⚠️ זיהוי לפי הכדור בלבד — לא ודאי' }));
+      aiStatus.appendChild(el('p', {
+        class: 'small',
+        text: 'זיהוי תרופה לפי צורה, צבע וחריטה אינו אמין: כדורים שונים נראים דומים, ואותה חריטה יכולה להופיע על תרופות שונות. לכן לא מילאתי שום פרט לבד.'
+      }));
+    } else {
+      aiStatus.appendChild(el('div', {
+        class: 'ai-head',
+        html: '✅ זוהה: <b>' + esc(title || 'התרופה') + '</b>' +
+          (filledCount ? ' · מולאו ' + filledCount + ' פרטים' : '')
+      }));
+    }
+
+    // מה נקרא מהתמונה
+    const seen = [];
+    if (v.regNumber) seen.push('מס׳ רישום ' + v.regNumber);
+    if (v.manufacturer) seen.push(v.manufacturer);
+    if (v.expiry) seen.push('תפוגה ' + v.expiry);
+    const pd = [v.pillColor, v.pillShape, v.pillImprint].filter(Boolean).join(' · ');
+    if (pd) seen.push('הכדור: ' + pd + (v.pillScored ? ' (קו חציה)' : ''));
+    if (seen.length) {
+      aiStatus.appendChild(el('div', { class: 'small muted', style: 'margin-top:6px', text: seen.join(' · ') }));
+    }
+
+    // אי-התאמה בין הכדור לאריזה — אזהרת בטיחות אמיתית
+    if (info.mismatchWarning) {
+      aiStatus.appendChild(el('div', { class: 'ai-mismatch', text: '⚠️ ' + info.mismatchWarning }));
+    }
+
+    if (needsConfirm) {
+      const guess = info.brandName || info.genericName || '';
+      // מציעים מילוי רק אם יש שם ואין אזהרת אי-התאמה — אי-התאמה היא בדיוק המקרה המסוכן
+      const offerFill = !!guess && !info.mismatchWarning && info.matchConfidence !== 'low';
+
+      if (guess) {
+        aiStatus.appendChild(el('p', {
+          class: 'small', style: 'margin-top:8px',
+          html: 'ההשערה: <b>' + esc(guess) + '</b>' +
+            (info.genericName && info.genericName !== guess ? ' (' + esc(info.genericName) + ')' : '') +
+            (info.matchConfidence ? ' — ודאות ' + esc({ high: 'גבוהה', medium: 'בינונית', low: 'נמוכה' }[info.matchConfidence] || info.matchConfidence) : '')
+        }));
+      }
+      if (offerFill) {
+        aiStatus.appendChild(el('button', {
+          class: 'btn due block', style: 'margin-top:10px',
+          text: 'בדקתי מול הרוקח — מלא לפי ההשערה',
+          onclick: e => {
+            const n = fill(v, info);
+            e.currentTarget.remove();
+            toast('מולאו ' + n + ' פרטים. עברי על כל אחד מהם.', 'warn', true);
+          }
+        }));
+      } else if (guess) {
+        aiStatus.appendChild(el('p', {
+          class: 'small', style: 'margin-top:6px;font-weight:700',
+          text: 'לא אציע למלא לפי ההשערה הזאת — היא חלשה מדי או שיש בה סתירה.'
+        }));
+      }
+      aiStatus.appendChild(el('p', {
+        class: 'small', style: 'margin-top:10px',
+        text: 'הדרך הבטוחה: לצלם גם את האריזה, או להקליד את השם ידנית. תמונת הכדור נשמרה ותוצג בתזכורת — וזה בפני עצמו מה שמונע בלבול בין כדורים.'
+      }));
+    } else {
+      aiStatus.appendChild(el('p', { class: 'small', style: 'margin-top:8px', text: 'עברי על השדות ובדקי שהכול נכון לפני שמירה.' }));
     }
   }
 
@@ -366,6 +539,15 @@ function renderInfo(med) {
       el('p', { class: 'small', text: 'האפליקציה תחפש בעלון לצרכן ובמאגרי התרופות ותסדר את המידע כאן.' })
     ]));
   } else {
+    if (info.mismatchWarning) {
+      wrap.appendChild(el('div', { class: 'ai-mismatch', style: 'margin-bottom:14px', text: '⚠️ ' + info.mismatchWarning }));
+    }
+    if (info.identified === false) {
+      wrap.appendChild(el('div', {
+        class: 'ai-status warn', text: 'התרופה לא זוהתה בוודאות. המידע כאן הוא השערה בלבד — כדאי לאמת מול הרוקח.'
+      }));
+    }
+
     // אזהרות באדום — תמיד למעלה
     if (info.redWarnings && info.redWarnings.length) {
       const box = el('div', { class: 'info-warn' });
@@ -374,6 +556,15 @@ function renderInfo(med) {
       info.redWarnings.forEach(w => ul.appendChild(el('li', { text: w })));
       box.appendChild(ul);
       wrap.appendChild(box);
+    }
+
+    // תיאור הכדור — מה שנקרא מהתמונה
+    const pd = S.pillDescription(med);
+    if (pd) {
+      const sec = el('div', { class: 'info-sec' });
+      sec.appendChild(el('h3', { html: '💊 איך הכדור נראה' }));
+      sec.appendChild(el('p', { text: pd + (med.pill.scored ? ' · עם קו חציה' : '') }));
+      wrap.appendChild(sec);
     }
 
     // שמות
