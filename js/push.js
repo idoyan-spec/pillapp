@@ -11,6 +11,8 @@ import * as Mirror from './mirror.js';
 
 const DAYS_AHEAD = 21;
 
+export let lastServerInfo = null;
+
 export function supported() {
   return ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window);
 }
@@ -96,6 +98,7 @@ export async function checkServer(url) {
   if (!res.ok) throw new Error('השרת לא ענה (' + res.status + ')');
   const j = await res.json();
   if (!j.hasKeys) throw new Error('השרת עונה אבל מפתחות ה-VAPID לא הוגדרו בו.');
+  lastServerInfo = j;
   return j;
 }
 

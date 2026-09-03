@@ -8,7 +8,7 @@
 // ============================================================
 import { sendPush } from './webpush.js';
 
-const BUILD = '2026-09-03 12:10 push-v1';
+const BUILD = '2026-09-03 12:05 push-v2';
 
 const WD = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
@@ -69,7 +69,16 @@ export default {
 
     // חותמת גרסה — לאימות שהמופע הפרוס באמת מריץ את הקוד הזה
     if (url.pathname === '/api/version') {
-      return json({ build: BUILD, hasKeys: !!env.VAPID_PUBLIC_KEY }, 200, origin);
+      // דופק ה-cron — מאפשר לענות בוודאות "האם השרת בכלל רץ"
+      let beat = null;
+      try { beat = await env.SUBS.get('meta:lastCron', 'json'); } catch (e) { /* ignore */ }
+      return json({
+        build: BUILD,
+        hasKeys: !!env.VAPID_PUBLIC_KEY,
+        lastCron: beat && beat.at || null,
+        lastCronSent: beat && beat.sent || 0,
+        lastCronSubs: beat && beat.subs || 0
+      }, 200, origin);
     }
 
     if (url.pathname === '/api/vapid') {
@@ -161,42 +170,56 @@ export default {
 };
 
 async function runSchedule(env) {
-  if (!env.VAPID_PUBLIC_KEY) return;
-  const vapid = vapidFrom(env);
   const now = new Date();
-  const list = await env.SUBS.list({ prefix: 'sub:' });
+  let sent = 0;
+  let subs = 0;
+  try {
+    if (!env.VAPID_PUBLIC_KEY) return;
+    const vapid = vapidFrom(env);
+    const list = await env.SUBS.list({ prefix: 'sub:' });
+    subs = list.keys.length;
 
-  for (const entry of list.keys) {
-    let rec;
-    try { rec = await env.SUBS.get(entry.name, 'json'); } catch (e) { continue; }
-    if (!rec || !rec.slots || !rec.slots.length) continue;
+    for (const entry of list.keys) {
+      let rec;
+      try { rec = await env.SUBS.get(entry.name, 'json'); } catch (e) { continue; }
+      if (!rec || !rec.slots || !rec.slots.length) continue;
 
-    let local;
-    try { local = localParts(now, rec.tz); } catch (e) { local = localParts(now, 'Asia/Jerusalem'); }
-    if (rec.quietWeekdays.indexOf(local.weekday) !== -1) continue;
+      let local;
+      try { local = localParts(now, rec.tz); } catch (e) { local = localParts(now, 'Asia/Jerusalem'); }
+      if (rec.quietWeekdays.indexOf(local.weekday) !== -1) continue;
 
-    for (const slot of rec.slots) {
-      const bar = slot.indexOf('|');
-      if (slot.slice(0, bar) !== local.date) continue;
-      const t = slot.slice(bar + 1);
-      const due = local.minutes - toMinutes(t);
-      if (due < 0) continue;
-      if (due > rec.nag.maxHours * 60) continue;
-      const isFirst = due === 0;
-      const isNag = due > 0 && (due % rec.nag.intervalMin === 0);
-      if (!isFirst && !isNag) continue;
+      for (const slot of rec.slots) {
+        const bar = slot.indexOf('|');
+        if (slot.slice(0, bar) !== local.date) continue;
+        const t = slot.slice(bar + 1);
+        const due = local.minutes - toMinutes(t);
+        if (due < 0) continue;
+        if (due > rec.nag.maxHours * 60) continue;
+        const isFirst = due === 0;
+        const isNag = due > 0 && (due % rec.nag.intervalMin === 0);
+        if (!isFirst && !isNag) continue;
 
-      const key = local.date + '|' + t;
-      if (rec.acked[key]) continue;
-      if (rec.snoozed && rec.snoozed[key] && Date.now() < rec.snoozed[key]) continue;
+        const key = local.date + '|' + t;
+        if (rec.acked[key]) continue;
+        if (rec.snoozed && rec.snoozed[key] && Date.now() < rec.snoozed[key]) continue;
 
-      const payload = JSON.stringify({
-        t: t, d: local.date,
-        n: isFirst ? 0 : Math.floor(due / rec.nag.intervalMin)
-      });
-      const r = await sendPush(rec.subscription, payload, vapid);
-      if (r.gone) { await env.SUBS.delete(entry.name); break; }
-      if (!r.ok) console.log('push failed', r.status, r.body);
+        const payload = JSON.stringify({
+          t: t, d: local.date,
+          n: isFirst ? 0 : Math.floor(due / rec.nag.intervalMin)
+        });
+        const r = await sendPush(rec.subscription, payload, vapid);
+        if (r.ok) sent++;
+        if (r.gone) { await env.SUBS.delete(entry.name); break; }
+        if (!r.ok) console.log('push failed', r.status, r.body);
+      }
     }
+  } finally {
+    // נכתב תמיד, גם אם שליחה נכשלה — זו עדות שה-cron אכן רץ
+    try {
+      await env.SUBS.put('meta:lastCron', JSON.stringify({
+        at: now.toISOString(), sent: sent, subs: subs, build: BUILD
+      }));
+    } catch (e) { /* ignore */ }
   }
 }
+

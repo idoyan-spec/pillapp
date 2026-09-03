@@ -9,8 +9,7 @@ VAPID_SUBJECT = "mailto:idoyan@gmail.com"
 
 [[kv_namespaces]]
 binding = "SUBS"
-id = "PLACEHOLDER_FILL_AFTER_CREATE"
-preview_id = "localdev"
+id = "b6a30b7513ee452fa985ea41286e1911"
 
 [triggers]
 crons = ["* * * * *"]

@@ -649,6 +649,14 @@ function renderSettings() {
       }
       if (s.endpointHost) rows.push('<span class="muted">' + esc(s.endpointHost) + '</span>');
       pStatus.innerHTML = rows.join('<br>');
+      // דופק השרת — עונה על "האם השרת בכלל רץ"
+      Push.checkServer().then(info => {
+        if (!info.lastCron) return;
+        const ago = Sch.agoText(Date.now() - new Date(info.lastCron).getTime());
+        pStatus.innerHTML += '<br><span class="small muted">השרת רץ ' + esc(ago) + ' · ' + esc(info.build) + '</span>';
+      }).catch(() => {
+        pStatus.innerHTML += '<br><span class="small" style="color:var(--danger)">⚠️ השרת לא עונה</span>';
+      });
     }).catch(() => { pStatus.textContent = '—'; });
   }
   paintPush();

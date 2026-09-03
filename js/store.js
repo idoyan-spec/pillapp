@@ -3,7 +3,7 @@
 // ============================================================
 import * as Mirror from './mirror.js';
 
-export const BUILD = '2026-09-03 12:30 v5 web-push';
+export const BUILD = '2026-09-03 12:15 v5 web-push';
 
 const KEY = 'pillapp.state.v1';
 
@@ -47,7 +47,7 @@ function defaults() {
       refillWarnDays: 7,
       push: {
         enabled: false,
-        server: '',        // כתובת ה-Worker
+        server: 'https://pillapp-push.idoyan.workers.dev',   // שרת התזכורות
         id: '',            // מזהה המנוי אצל השרת
         lastSync: 0,
         lastSlot: '',      // המנה האחרונה שנרשמה — כשהיא מתקרבת צריך לפתוח ולסנכרן
@@ -89,6 +89,9 @@ function migrate() {
     if (!m.pill) m.pill = { color: '', shape: '', imprint: '', scored: false };
     if (!m.photoMain) m.photoMain = 'pill';
     if (m.englishName === undefined) m.englishName = '';
+  }
+  if (!state.settings.push.server) {
+    state.settings.push.server = 'https://pillapp-push.idoyan.workers.dev';
   }
 }
 
