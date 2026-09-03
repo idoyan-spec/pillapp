@@ -1,7 +1,7 @@
 // ============================================================
 //  sw.js  —  עבודה בלי רשת + טיפול בלחיצה על התראה
 // ============================================================
-const BUILD = '2026-09-03 19:35 v6 setup-and-delete';
+const BUILD = '2026-09-03 20:10 v7 install-to-home';
 const CACHE = 'pillapp-' + BUILD;
 
 const SHELL = [
@@ -23,6 +23,7 @@ const SHELL = [
   './js/ics.js',
   './js/push.js',
   './js/mirror.js',
+  './js/install.js',
   './assets/icon-192.png',
   './assets/icon-512.png'
 ];

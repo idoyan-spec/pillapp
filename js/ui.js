@@ -10,6 +10,7 @@ import * as Sensors from './sensors.js';
 import * as G from './gemini.js';
 import * as ICS from './ics.js';
 import * as Push from './push.js';
+import * as Install from './install.js';
 import { $, el, esc, toast, openSheet, closeSheet, confirmBig, promptBig } from './dom.js';
 import { openMedEditor, openDrugInfo, openProcedureEditor } from './editors.js';
 
@@ -607,6 +608,12 @@ function renderSettings() {
       }
     },
     {
+      label: 'אייקון במסך הבית',
+      done: Install.isInstalled(),
+      hint: 'כדי לפתוח בלחיצה אחת, בלי לחפש בדפדפן',
+      btn: 'התקנה', run: () => openInstallHelp()
+    },
+    {
       label: 'מפתח Gemini',
       done: !!st.geminiKey,
       hint: 'לצילום אריזה שממלא לבד, ולמידע על התרופה',
@@ -1037,6 +1044,57 @@ function scrollToCard(id) {
   c.style.transition = 'box-shadow .3s';
   c.style.boxShadow = '0 0 0 4px var(--info)';
   setTimeout(() => { c.style.boxShadow = ''; }, 1600);
+}
+
+// ============================================================
+//  הדרכה: התקנה למסך הבית
+// ============================================================
+export function openInstallHelp() {
+  openSheet('אייקון במסך הבית', () => {
+    const wrap = el('div');
+
+    if (Install.isInstalled()) {
+      wrap.appendChild(el('div', { class: 'ai-status ok', html: '<div class="ai-head">✅ כבר מותקנת</div>' +
+        '<p class="small">האפליקציה רצה ממסך הבית. האייקון כבר שם.</p>' }));
+      return wrap;
+    }
+
+    wrap.appendChild(el('p', {
+      class: 'small',
+      text: 'אחרי ההתקנה יופיע אייקון עגול עם כדור ושעון במסך הבית, בדיוק כמו כל אפליקציה. ' +
+        'היא תיפתח במסך מלא בלי סרגלי הדפדפן, והנתונים והתזכורות נשארים בדיוק כמו שהם.'
+    }));
+
+    if (Install.canPrompt()) {
+      wrap.appendChild(el('button', {
+        class: 'btn block big', style: 'margin:14px 0', html: '📲 התקנה עכשיו',
+        onclick: async e => {
+          e.currentTarget.disabled = true;
+          const r = await Install.prompt();
+          if (r === 'accepted') { closeSheet(); toast('מתקין… האייקון יופיע במסך הבית.', 'ok', true); }
+          else if (r === 'dismissed') { e.currentTarget.disabled = false; toast('ההתקנה בוטלה.', 'warn'); }
+          else { e.currentTarget.disabled = false; toast('הדפדפן לא הציע התקנה כרגע — לפי ההוראות למטה.', 'warn', true); }
+        }
+      }));
+      wrap.appendChild(el('p', { class: 'hint', text: 'אם הכפתור לא עובד, אפשר גם ידנית:' }));
+    } else {
+      wrap.appendChild(el('div', {
+        class: 'ai-status warn', style: 'margin:12px 0',
+        html: '<p class="small">הדפדפן לא הציע התקנה אוטומטית כרגע. זה קורה אם כבר ביטלת פעם אחת, ' +
+          'או בדפדפנים מסוימים. אפשר להתקין ידנית — זה לוקח שתי לחיצות:</p>'
+      }));
+    }
+
+    const ol = el('ol', { style: 'padding-inline-start:22px;line-height:2' });
+    Install.manualSteps().forEach(t => ol.appendChild(el('li', { text: t })));
+    wrap.appendChild(ol);
+
+    wrap.appendChild(el('p', {
+      class: 'hint',
+      text: 'חשוב: להתקין מאותו דפדפן שבו כבר הגדרת את האפליקציה — כל הנתונים והתזכורות עוברים איתה.'
+    }));
+    return wrap;
+  });
 }
 
 // ============================================================

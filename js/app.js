@@ -8,6 +8,7 @@ import * as Sensors from './sensors.js';
 import * as Sch from './schedule.js';
 import * as Push from './push.js';
 import * as Mirror from './mirror.js';
+import * as Install from './install.js';
 import { $, el, toast, openSheet, closeSheet } from './dom.js';
 import { openMedEditor } from './editors.js';
 
@@ -220,14 +221,8 @@ function firstRun() {
 })();
 
 // ---------- התקנה ----------
-let deferredPrompt = null;
-window.addEventListener('beforeinstallprompt', e => {
-  e.preventDefault();
-  deferredPrompt = e;
-  setTimeout(() => {
-    if (!deferredPrompt) return;
-    toast('אפשר להתקין את האפליקציה למסך הבית — תפריט הדפדפן ← "הוספה למסך הבית"', 'info', true);
-  }, 4000);
-});
+Install.init();
+document.addEventListener('pill:installable', () => UI.render());
+document.addEventListener('pill:installed', () => { UI.render(); toast('הותקן! האייקון נמצא במסך הבית.', 'ok', true); });
 
-window.pillApp = { S: S, UI: UI, N: N, Sensors: Sensors, Sch: Sch, Push: Push, Mirror: Mirror, BUILD: S.BUILD };
+window.pillApp = { S: S, UI: UI, N: N, Sensors: Sensors, Sch: Sch, Push: Push, Mirror: Mirror, Install: Install, BUILD: S.BUILD };
