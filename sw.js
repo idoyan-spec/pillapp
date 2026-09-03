@@ -1,7 +1,7 @@
 // ============================================================
 //  sw.js  —  עבודה בלי רשת + טיפול בלחיצה על התראה
 // ============================================================
-const BUILD = '2026-09-03 21:30 v8 push-selfheal';
+const BUILD = '2026-09-04 09:15 v9 back-and-heal';
 const CACHE = 'pillapp-' + BUILD;
 
 const SHELL = [
@@ -24,6 +24,7 @@ const SHELL = [
   './js/push.js',
   './js/mirror.js',
   './js/install.js',
+  './js/nav.js',
   './assets/icon-192.png',
   './assets/icon-512.png'
 ];

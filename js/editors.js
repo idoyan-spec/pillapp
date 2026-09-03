@@ -377,28 +377,30 @@ function build(m, isNew, opts) {
   const timePills = el('div', { class: 'timepills', style: 'margin-bottom:10px' });
   timesBox.appendChild(timePills);
 
-  const addRow = el('div', { class: 'row', style: 'gap:8px' });
-  const timeInput = el('input', { type: 'time', style: 'max-width:150px' });
+  // הוספת שעה בפעולה אחת: בוחרים שעה והיא נכנסת מיד.
+  // קודם היה צריך גם ללחוץ "הוספה" — צעד מיותר.
+  const addTime = t => {
+    if (!t || !/^\d{1,2}:\d{2}$/.test(t)) return;
+    if (t.length === 4) t = '0' + t;
+    if (m.schedule.times.indexOf(t) === -1) m.schedule.times.push(t);
+    m.schedule.times.sort();
+    paintTimes();
+  };
+
+  const timeInput = el('input', {
+    type: 'time', style: 'max-width:170px',
+    onchange: e => { addTime(e.currentTarget.value); e.currentTarget.value = ''; }
+  });
+  const addRow = el('div', { class: 'row', style: 'gap:8px;align-items:center' });
   addRow.appendChild(timeInput);
-  addRow.appendChild(el('button', {
-    class: 'btn ghost', text: '＋ הוספה',
-    onclick: () => {
-      if (!timeInput.value) return;
-      if (m.schedule.times.indexOf(timeInput.value) === -1) m.schedule.times.push(timeInput.value);
-      m.schedule.times.sort();
-      paintTimes();
-    }
-  }));
+  addRow.appendChild(el('span', { class: 'hint', style: 'margin:0', text: 'נוספת מיד אחרי הבחירה' }));
   timesBox.appendChild(addRow);
 
   const presets = el('div', { class: 'chips', style: 'margin-top:10px' });
   TIME_PRESETS.forEach(p => {
     presets.appendChild(el('button', {
       class: 'chip', text: p.label + ' ' + p.t,
-      onclick: () => {
-        if (m.schedule.times.indexOf(p.t) === -1) m.schedule.times.push(p.t);
-        m.schedule.times.sort(); paintTimes();
-      }
+      onclick: () => addTime(p.t)
     }));
   });
   timesBox.appendChild(presets);

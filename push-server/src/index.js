@@ -8,7 +8,7 @@
 // ============================================================
 import { sendPush } from './webpush.js';
 
-const BUILD = '2026-09-03 21:20 push-v3-selfheal';
+const BUILD = '2026-09-04 09:10 push-v4-diag';
 
 const WD = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
@@ -104,6 +104,38 @@ export default {
       }, 200, origin);
     }
 
+    // אבחון מהמכשיר — מצב טכני בלבד, בלי שום פרט רפואי.
+    // בלי זה אי אפשר לדעת למה מכשיר מסוים לא מקבל התראות.
+    if (url.pathname === '/api/diag' && request.method === 'POST') {
+      let b;
+      try { b = await request.json(); } catch (e) { return json({ error: 'JSON' }, 400, origin); }
+      const rec = b.id ? await env.SUBS.get('sub:' + b.id, 'json') : null;
+      const entry = {
+        at: new Date().toISOString(),
+        build: String(b.build || '').slice(0, 40),
+        perm: String(b.perm || '').slice(0, 12),
+        hasSub: !!b.hasSub,
+        standalone: !!b.standalone,
+        enabled: !!b.enabled,
+        event: String(b.event || '').slice(0, 24),
+        ua: String(b.ua || '').slice(0, 120)
+      };
+      if (rec) {
+        rec.diag = (rec.diag || []).slice(-9).concat([entry]);
+        await env.SUBS.put('sub:' + b.id, JSON.stringify(rec));
+      } else {
+        await env.SUBS.put('diag:orphan', JSON.stringify(entry));
+      }
+      return json({ ok: true }, 200, origin);
+    }
+
+    if (url.pathname === '/api/diag' && request.method === 'GET') {
+      const id = url.searchParams.get('id') || '';
+      const rec = id ? await env.SUBS.get('sub:' + id, 'json') : null;
+      const orphan = await env.SUBS.get('diag:orphan', 'json');
+      return json({ diag: (rec && rec.diag) || [], orphan: orphan || null }, 200, origin);
+    }
+
     if (url.pathname === '/api/vapid') {
       if (!env.VAPID_PUBLIC_KEY) return json({ error: 'VAPID לא הוגדר' }, 500, origin);
       return json({ publicKey: env.VAPID_PUBLIC_KEY }, 200, origin);
@@ -138,6 +170,7 @@ export default {
         snoozed: (prev && prev.snoozed) || {},
         // רישום מחדש מנקה סימון "מת" — זה בדיוק מה שמרפא מנוי שפג
         dead: false, deadReason: null, deadAt: null,
+        diag: (prev && prev.diag) || [],
         lastSentAt: (prev && prev.lastSentAt) || null,
         updatedAt: Date.now()
       };

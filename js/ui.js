@@ -14,14 +14,15 @@ import * as Install from './install.js';
 import { $, el, esc, toast, openSheet, closeSheet, confirmBig, promptBig } from './dom.js';
 import { openMedEditor, openDrugInfo, openProcedureEditor } from './editors.js';
 
-let currentView = 'today';
+let _view = 'today';
+export const currentView = () => _view;
 let currentReminder = null;
 
 // ============================================================
 //  שלד
 // ============================================================
 export function showView(name) {
-  currentView = name;
+  _view = name;
   ['today', 'meds', 'track', 'notes', 'settings'].forEach(v => {
     $('#view-' + v).classList.toggle('hidden', v !== name);
   });
@@ -36,11 +37,11 @@ export function render() {
   applyLook();
   $('#hello').textContent = T.greeting();
   $('#buildStamp').innerHTML = 'גרסה <span dir="ltr">' + esc(S.BUILD) + '</span>';
-  if (currentView === 'today') renderToday();
-  if (currentView === 'meds') renderMeds();
-  if (currentView === 'track') renderTrack();
-  if (currentView === 'notes') renderNotes();
-  if (currentView === 'settings') renderSettings();
+  if (_view === 'today') renderToday();
+  if (_view === 'meds') renderMeds();
+  if (_view === 'track') renderTrack();
+  if (_view === 'notes') renderNotes();
+  if (_view === 'settings') renderSettings();
   paintTabBadge();
   if (currentReminder) refreshReminderIfMarked();
 }

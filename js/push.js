@@ -8,6 +8,7 @@
 import { state, save, ymd, addDays, slotId } from './store.js';
 import { slotsForDate, isQuietDate } from './schedule.js';
 import * as Mirror from './mirror.js';
+import { BUILD as BUILD_TAG } from './store.js';
 
 const DAYS_AHEAD = 21;
 
@@ -159,7 +160,9 @@ export async function sync(existingSub) {
       c.endpoint = sub.endpoint; save();
     } catch (e) { /* ניפול לשגיאה למטה */ }
   }
-  if (!sub) { c.enabled = false; save(); throw new Error('המנוי לדחיפות אבד. צריך להפעיל מחדש.'); }
+  // לא מכבים כאן את enabled — כיבוי שקט הפך כשל זמני לכשל קבוע.
+  // heal() הוא זה שמחליט מה לעשות.
+  if (!sub) throw new Error('המנוי לדחיפות אבד. צריך להפעיל מחדש.');
 
   const slots = upcomingSlots();
   const res = await api('/api/register', {
@@ -177,6 +180,81 @@ export async function sync(existingSub) {
   save();
   await Mirror.write(state);
   return res;
+}
+
+/**
+ * נקודת הכניסה היחידה לתחזוקת הדחיפות בפתיחת האפליקציה.
+ * חייבת לא לזרוק ולא להיות תלויה בדגלים מקומיים — הניסיון הראה
+ * ששתי התלויות האלה הפכו כשל זמני לכשל קבוע ושקט.
+ * @returns {{ok:boolean, healed?:boolean, problem?:string, status?:object}}
+ */
+export async function heal() {
+  const c = cfg();
+  if (!supported()) return { ok: false, problem: 'הדפדפן לא תומך בדחיפות' };
+  if (!c.server) return { ok: false, problem: 'לא הוגדר שרת' };
+  if (Notification.permission !== 'granted') {
+    return { ok: false, problem: 'ההתראות לא מאושרות' };
+  }
+
+  let status = null;
+  if (c.id) {
+    try {
+      const res = await fetch(serverUrl('/api/status') + '?id=' + encodeURIComponent(c.id));
+      status = await res.json();
+      lastStatus = status;
+    } catch (e) { return { ok: false, problem: 'אין קשר לשרת' }; }
+  }
+
+  const reg = await navigator.serviceWorker.ready;
+  let sub = null;
+  try { sub = await reg.pushManager.getSubscription(); } catch (e) { /* ignore */ }
+
+  const serverBroken = !c.id || !status || !status.exists || status.dead;
+  const endpointChanged = sub && c.endpoint && sub.endpoint !== c.endpoint;
+
+  // מנוי מת בשרת, או שאין מנוי בדפדפן -> מנוי חדש לגמרי
+  if (!sub || (status && status.dead)) {
+    try {
+      await resubscribe();
+      await report({ event: 'healed', had: sub ? 'stale' : 'none' });
+      return { ok: true, healed: true };
+    } catch (e) {
+      c.enabled = false; save();
+      return { ok: false, problem: e.message };
+    }
+  }
+
+  // מנוי חי אבל השרת לא מכיר אותו, או שהכתובת השתנתה -> רישום מחדש
+  if (serverBroken || endpointChanged) {
+    try { await sync(sub); return { ok: true, healed: true }; }
+    catch (e) { return { ok: false, problem: e.message }; }
+  }
+
+  // הכול תקין — רק מרעננים את לוח המנות
+  try { await sync(sub); } catch (e) { /* לא קריטי */ }
+  return { ok: true, status: status };
+}
+
+/** דיווח אבחון קצר לשרת. בלי שום פרט רפואי — רק מצב טכני. */
+export async function report(extra) {
+  const c = cfg();
+  if (!c.server || !c.id) return;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && await reg.pushManager.getSubscription();
+    await fetch(serverUrl('/api/diag'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({
+        id: c.id,
+        build: BUILD_TAG,
+        perm: Notification.permission,
+        hasSub: !!sub,
+        standalone: window.matchMedia('(display-mode: standalone)').matches,
+        enabled: !!c.enabled,
+        ua: (navigator.userAgent || '').slice(0, 120)
+      }, extra || {}))
+    });
+  } catch (e) { /* אבחון בלבד */ }
 }
 
 /**

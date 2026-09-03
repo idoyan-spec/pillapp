@@ -9,6 +9,7 @@ import * as Sch from './schedule.js';
 import * as Push from './push.js';
 import * as Mirror from './mirror.js';
 import * as Install from './install.js';
+import * as Nav from './nav.js';
 import { $, el, toast, openSheet, closeSheet } from './dom.js';
 import { openMedEditor } from './editors.js';
 
@@ -54,11 +55,16 @@ function wire() {
   UI.wireMagnifier();
 
   document.addEventListener('keydown', e => {
-    if (e.key !== 'Escape') return;
-    if (!$('#magnifier').classList.contains('hidden')) return UI.closeMagnifier();
-    if (!$('#reminder').classList.contains('hidden')) return UI.closeReminder();
-    if (!$('#sheet').classList.contains('hidden')) return closeSheet();
-    if (!$('#shabbat').classList.contains('hidden')) return UI.closeShabbat();
+    if (e.key === 'Escape') closeTopLayer();
+  });
+
+  // כפתור "חזור" של אנדרואיד — סוגר שכבה, ואז חוזר למסך הראשי,
+  // ורק בלחיצה שנייה במסך הראשי באמת יוצא.
+  Nav.init({
+    closeTop: closeTopLayer,
+    atRoot: () => UI.currentView() === 'today',
+    goRoot: () => UI.showView('today'),
+    onExitHint: () => toast('לחצי שוב על "חזור" כדי לצאת', 'info')
   });
 
   // תזכורת פנימית
@@ -107,6 +113,18 @@ function wire() {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) { N.tick(); UI.render(); }
   });
+}
+
+/** סוגר את השכבה העליונה שפתוחה. מחזיר true אם היה מה לסגור. */
+function closeTopLayer() {
+  // סדר לפי שכבות z — העליונה נסגרת ראשונה
+  const modal = document.querySelectorAll('.sheet');
+  if (modal.length > 1) { modal[modal.length - 1].remove(); return true; }
+  if (!$('#magnifier').classList.contains('hidden')) { UI.closeMagnifier(); return true; }
+  if (!$('#reminder').classList.contains('hidden')) { UI.closeReminder(); return true; }
+  if (!$('#sheet').classList.contains('hidden')) { closeSheet(); return true; }
+  if (!$('#shabbat').classList.contains('hidden')) { UI.closeShabbat(); return true; }
+  return false;
 }
 
 // ---------- ברוכה הבאה ----------
@@ -198,22 +216,16 @@ function firstRun() {
   } catch (e) { /* ignore */ }
 
   // סנכרון לוח המנות לשרת התזכורות
-  if (st.push.enabled && st.push.server) {
-    Push.sync()
-      .then(r => {
-        if (r) console.log('[pillApp] סונכרנו', r.slots, 'מנות לשרת, עד', r.lastSlot);
-        // אימות שהשרת באמת מסוגל לשלוח — ומרפא אם המנוי פג
-        return Push.verify(true);
-      })
-      .then(v => {
-        if (v && v.healed) toast('חידשתי את החיבור לתזכורות.', 'ok', true);
-        if (v && v.dead && !v.healed) toast('התזכורות מנותקות. הגדרות ← תזכורות כשהאפליקציה סגורה.', 'error', true);
+  // הריפוי חייב לרוץ ראשון ובאופן עצמאי. בגרסה קודמת הוא היה תלוי
+  // בהצלחת sync() ובדגל enabled — וכששניהם נפלו, המנוי נשאר מת לנצח.
+  if (st.push.server && (st.push.id || st.push.enabled)) {
+    Push.heal()
+      .then(res => {
+        if (res.healed) toast('חידשתי את החיבור לתזכורות ✓', 'ok', true);
+        else if (res.problem) toast('התזכורות מנותקות: ' + res.problem, 'error', true);
         UI.render();
       })
-      .catch(e => {
-        console.warn('[pillApp] סנכרון דחיפות נכשל:', e.message);
-        toast('התזכורות בשרת לא הסתנכרנו: ' + e.message, 'warn', true);
-      });
+      .catch(e => console.warn('[pillApp] ריפוי דחיפות:', e.message));
   }
   Mirror.write(S.state);
 
