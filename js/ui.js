@@ -11,10 +11,12 @@ import * as G from './gemini.js';
 import * as ICS from './ics.js';
 import * as Push from './push.js';
 import * as Install from './install.js';
+import * as Perms from './perms.js';
 import { $, el, esc, toast, openSheet, closeSheet, confirmBig, promptBig } from './dom.js';
 import { openMedEditor, openDrugInfo, openProcedureEditor } from './editors.js';
 
 let _view = 'today';
+let permsSummary = null;
 export const currentView = () => _view;
 let currentReminder = null;
 
@@ -33,8 +35,21 @@ export function showView(name) {
   window.scrollTo(0, 0);
 }
 
+/** מרענן את מצב האישורים ברקע. מרנדר מחדש רק אם באמת השתנה, כדי לא ללולאה. */
+function refreshPerms() {
+  Perms.snapshot().then(list => {
+    const sum = Perms.summarize(list);
+    const changed = !permsSummary ||
+      permsSummary.granted !== sum.granted || permsSummary.total !== sum.total ||
+      permsSummary.missingRequired !== sum.missingRequired;
+    permsSummary = sum;
+    if (changed && _view === 'settings') renderSettings();
+  }).catch(() => { });
+}
+
 export function render() {
   applyLook();
+  refreshPerms();
   $('#hello').textContent = T.greeting();
   $('#buildStamp').innerHTML = 'גרסה <span dir="ltr">' + esc(S.BUILD) + '</span>';
   if (_view === 'today') renderToday();
@@ -107,10 +122,11 @@ function renderToday() {
       class: 'btn block big', html: '▶ הפעלת התזכורות',
       onclick: async e => {
         const btn = e.currentTarget;
+        // אין הרשאת התראות -> מסך האישורים מטפל בהכול ומפעיל בסוף לבד
+        if (N.permission() !== 'granted') { openPermissions(true); return; }
         btn.disabled = true; btn.innerHTML = '<span class="busy"></span> מפעיל…';
         try {
           const r = await Push.enable(S.state.settings.push.server);
-          // אימות מיידי — שלא תצטרכי לחכות עד השעה הבאה כדי לדעת אם זה עובד
           try { await Push.testPush(); } catch (e2) { /* לא קריטי */ }
           toast('הופעל! נרשמו ' + r.slots + ' תזכורות. שלחתי התראת בדיקה — היא אמורה להופיע עכשיו.', 'ok', true);
         } catch (err) { toast(err.message, 'error', true); }
@@ -586,11 +602,13 @@ function renderSettings() {
       btn: 'הגדרה', run: () => scrollToCard('c-personal')
     },
     {
-      label: 'אישור התראות',
-      done: N.permission() === 'granted',
-      hint: N.permission() === 'denied' ? 'חסום בדפדפן — צריך לפתוח בהגדרות האתר' : 'בלי זה לא תוצג שום התראה',
-      btn: 'אישור',
-      run: async () => { await N.requestPermission(); render(); }
+      label: 'אישורים (התראות, מצלמה, מיקום)',
+      done: permsSummary && permsSummary.granted === permsSummary.total,
+      hint: permsSummary
+        ? (permsSummary.missingRequired ? 'ההתראות עוד לא אושרו — בלי זה לא תוצג שום תזכורת'
+          : 'אושרו ' + permsSummary.granted + ' מתוך ' + permsSummary.total)
+        : 'בודק…',
+      btn: 'אישור הכול', run: () => openPermissions(false)
     },
     {
       label: 'תזכורות כשהאפליקציה סגורה',
@@ -1079,6 +1097,119 @@ function scrollToCard(id) {
   c.style.transition = 'box-shadow .3s';
   c.style.boxShadow = '0 0 0 4px var(--info)';
   setTimeout(() => { c.style.boxShadow = ''; }, 1600);
+}
+
+// ============================================================
+//  אישורים — הכול במקום אחד
+// ============================================================
+export function openPermissions(auto) {
+  openSheet('אישורים', () => {
+    const wrap = el('div');
+    wrap.appendChild(el('p', {
+      class: 'small',
+      text: 'האפליקציה מבקשת את כל האישורים כאן, פעם אחת. הטלפון ישאל על כל אחד בנפרד — ' +
+        'פשוט לאשר. אפשר לוותר על מה שלא רוצים, וההתראות הן היחיד שבאמת חובה.'
+    }));
+
+    const listBox = el('div', { class: 'diag', style: 'margin:12px 0' });
+    wrap.appendChild(listBox);
+
+    const allBtn = el('button', { class: 'btn block big', html: '✓ אישור הכול' });
+    wrap.appendChild(allBtn);
+
+    const note = el('div', { class: 'hint', style: 'margin-top:10px' });
+    wrap.appendChild(note);
+
+    const LABEL = { granted: 'מאושר ✓', denied: 'חסום ✗', prompt: 'ממתין', unsupported: 'לא רלוונטי' };
+
+    async function paint() {
+      const list = await Perms.snapshot();
+      listBox.innerHTML = '';
+      list.forEach(x => {
+        const row = el('div', { class: 'diag-row' });
+        row.appendChild(el('span', {
+          class: 'diag-k', style: 'min-width:auto;flex:1',
+          html: x.icon + ' <b>' + esc(x.label) + '</b>' + (x.required ? ' <span class="badge danger">חובה</span>' : '') +
+            '<br><span class="hint" style="margin:0">' + esc(x.why) + '</span>'
+        }));
+        if (x.status === 'granted' || x.status === 'unsupported') {
+          row.appendChild(el('span', {
+            class: 'diag-v ' + (x.status === 'granted' ? 'ok' : ''), style: 'flex:none',
+            text: LABEL[x.status]
+          }));
+        } else {
+          row.appendChild(el('button', {
+            class: 'btn' + (x.status === 'denied' ? ' ghost' : ''),
+            style: 'min-height:44px;padding:8px 14px;flex:none',
+            text: x.status === 'denied' ? 'חסום' : 'אישור',
+            onclick: async e => {
+              if (x.status === 'denied') { showDeniedHelp(x.label); return; }
+              const b = e.currentTarget; b.disabled = true; b.innerHTML = '<span class="busy"></span>';
+              try { await Perms.get(x.key).request(); }
+              catch (err) { note.textContent = '⚠️ ' + err.message; }
+              await paint();
+              render();
+            }
+          }));
+        }
+        listBox.appendChild(row);
+      });
+
+      const sum = Perms.summarize(list);
+      allBtn.disabled = sum.granted === sum.total;
+      allBtn.innerHTML = sum.granted === sum.total
+        ? '✅ כל האישורים קיימים'
+        : '✓ אישור הכול (' + sum.granted + ' מתוך ' + sum.total + ')';
+    }
+
+    allBtn.addEventListener('click', async () => {
+      allBtn.disabled = true;
+      note.textContent = '';
+      const list = await Perms.snapshot();
+      const pending = list.filter(x => x.status === 'prompt');
+      const failed = [];
+      for (const x of pending) {
+        try { await Perms.get(x.key).request(); }
+        catch (e) { failed.push(x.label + ': ' + e.message); }
+        await paint();
+      }
+      note.innerHTML = failed.length
+        ? '⚠️ לא אושרו:<br>' + failed.map(esc).join('<br>')
+        : '✅ הכול אושר.';
+      render();
+      // ההתראות אושרו — אפשר להפעיל מיד את תזכורות השרת
+      if (Notification.permission === 'granted' && !S.state.settings.push.enabled) {
+        note.innerHTML += '<br>מפעיל את התזכורות…';
+        try {
+          const r = await Push.enable(S.state.settings.push.server);
+          try { await Push.testPush(); } catch (e2) { /* ignore */ }
+          note.innerHTML += '<br>✅ התזכורות פועלות (' + r.slots + ' רשומות). שלחתי התראת בדיקה.';
+        } catch (e) { note.innerHTML += '<br>⚠️ ' + esc(e.message); }
+        render();
+      }
+    });
+
+    paint();
+    if (auto) setTimeout(() => allBtn.click(), 400);
+    return wrap;
+  });
+}
+
+function showDeniedHelp(label) {
+  openSheet('לפתוח אישור שנחסם', () => {
+    const wrap = el('div');
+    wrap.appendChild(el('p', { text: 'האישור ל' + label + ' נחסם בעבר, ולכן הדפדפן כבר לא ישאל שוב. כך פותחים:' }));
+    const ol = el('ol', { style: 'padding-inline-start:22px;line-height:2' });
+    [
+      'לוחצים על סמל המנעול 🔒 (או ⓘ) ליד הכתובת למעלה.',
+      'בוחרים "הרשאות" או "Permissions".',
+      'מעבירים את ' + label + ' ל"אפשר".',
+      'חוזרים לכאן ומרעננים את הדף.'
+    ].forEach(t => ol.appendChild(el('li', { text: t })));
+    wrap.appendChild(ol);
+    wrap.appendChild(el('button', { class: 'btn block', text: 'חזרה לאישורים', onclick: () => openPermissions(false) }));
+    return wrap;
+  });
 }
 
 // ============================================================

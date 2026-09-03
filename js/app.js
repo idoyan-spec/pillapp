@@ -161,13 +161,14 @@ function firstRun() {
         S.state.settings.gender = gender;
         S.saveNow();
         N.primeMedia();
-        const p = await N.requestPermission();
         closeSheet();
         UI.render();
-        if (p !== 'granted') toast('בלי אישור התראות אפשר לראות תזכורות רק כשהאפליקציה פתוחה.', 'warn', true);
+        // כברירת מחדל מבקשים את כל האישורים כאן, פעם אחת, במקום
+        // שכל אחד יתבקש במקום אחר ובזמן אחר ויישאר לא מאושר.
+        setTimeout(() => UI.openPermissions(true), 300);
         setTimeout(() => {
-          if (!S.state.meds.length) openMedEditor(null);
-        }, 500);
+          if (!S.state.meds.length && $('#sheet').classList.contains('hidden')) openMedEditor(null);
+        }, 4000);
       }
     }));
     return wrap;

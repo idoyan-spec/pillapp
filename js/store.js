@@ -3,7 +3,7 @@
 // ============================================================
 import * as Mirror from './mirror.js';
 
-export const BUILD = '2026-09-04 09:15 v9 back-and-heal';
+export const BUILD = '2026-09-04 09:50 v10 all-permissions';
 
 const KEY = 'pillapp.state.v1';
 
