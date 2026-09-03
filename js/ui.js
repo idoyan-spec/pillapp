@@ -12,6 +12,7 @@ import * as ICS from './ics.js';
 import * as Push from './push.js';
 import * as Install from './install.js';
 import * as Perms from './perms.js';
+import * as Nav from './nav.js';
 import { $, el, esc, toast, openSheet, closeSheet, confirmBig, promptBig } from './dom.js';
 import { openMedEditor, openDrugInfo, openProcedureEditor } from './editors.js';
 
@@ -684,6 +685,33 @@ function renderSettings() {
   c1.appendChild(el('div', { class: 'lbl', text: 'איך לפנות אלייך', style: 'font-weight:700;margin-bottom:6px' }));
   c1.appendChild(gRow);
 
+  // סגנון הפנייה
+  c1.appendChild(el('div', { class: 'lbl', text: 'איך שהאפליקציה מדברת אלייך', style: 'font-weight:700;margin-bottom:6px' }));
+  const toneWrap = el('div', { style: 'margin-bottom:16px' });
+  Object.keys(T.TONES).forEach(k => {
+    const on = T.tone() === k;
+    const row = el('button', {
+      class: 'tone-opt' + (on ? ' on' : ''),
+      onclick: () => { st.tone = k; S.save(); render(); toast(T.praise(), 'ok'); }
+    }, [
+      el('span', { class: 'tone-mark', text: on ? '●' : '○' }),
+      el('div', { class: 'grow', style: 'text-align:start' }, [
+        el('div', { style: 'font-weight:800', text: T.TONES[k].label }),
+        el('div', { class: 'hint', style: 'margin:0', text: T.TONES[k].hint })
+      ])
+    ]);
+    toneWrap.appendChild(row);
+  });
+  c1.appendChild(toneWrap);
+  const sample = S.state.meds[0];
+  if (sample) {
+    c1.appendChild(el('div', {
+      class: 'ai-status', style: 'margin-bottom:16px',
+      html: '<div class="hint" style="margin:0 0 4px">כך זה יישמע:</div><b>' +
+        esc(T.reminderTitle(sample, 'preview')) + '</b>'
+    }));
+  }
+
   const fs = fieldIn(c1, 'גודל הכתב: ' + Math.round((st.fontScale || 1) * 100) + '%',
     el('input', { type: 'range', min: 0.85, max: 1.6, step: 0.05 }));
   fs.value = st.fontScale || 1;
@@ -912,6 +940,8 @@ function renderSettings() {
   line('התזכורת הבאה', nx ? nx.med.name + ' · ' + nx.time + (nx.dateStr !== S.ymd() ? ' (' + nx.dateStr + ')' : ' היום') : 'אין מתוכננת', null);
   const un = Sch.unmarkedSlots().length;
   line('מנות שלא סומנו', un ? String(un) : 'אין', un === 0);
+  const nv = Nav.debug();
+  line('כפתור "חזור"', nv.armed ? 'פעיל ✓' : (nv.started ? 'לא דרוך ✗' : 'לא אותחל ✗'), !!nv.armed);
   cD.appendChild(diag);
 
   if (prev) {
@@ -1050,6 +1080,8 @@ function renderSettings() {
   const modelIn = fieldIn(c5, 'מודל', el('input', { type: 'text' }));
   modelIn.value = st.geminiModel;
   bind(modelIn, 'geminiModel', x => x.trim() || 'gemini-3.8-flash');
+  checkIn(c5, 'לחתוך תמונות אוטומטית לאזור הרלוונטי', st.autoCrop, x => { st.autoCrop = x; S.save(); });
+  c5.appendChild(el('div', { class: 'hint', style: 'margin:-8px 0 12px', text: 'אחרי צילום, האפליקציה מוצאת את האריזה או הכדור בתמונה וחותכת סביבם — כך הם נראים גדולים וברורים בתזכורת.' }));
   c5.appendChild(el('button', {
     class: 'btn ghost block', text: 'בדיקת המפתח',
     onclick: async e => {
@@ -1354,26 +1386,26 @@ export function openReminder(slot, nagCount) {
     text: isOld ? T.lateReminderTitle(m, slot.time, Sch.agoText(lateBy)) : T.reminderTitle(m, slot.id)
   }));
 
-  const pic = el('div', { class: 'reminder-pic' });
-  const mainPh = S.medPhoto(m);
-  if (mainPh) pic.appendChild(el('img', { src: mainPh, alt: m.name }));
-  else pic.textContent = '💊';
-  const altPh = S.medPhotoAlt(m);
-  if (altPh) {
-    // תמונה משנית קטנה — לחיצה מחליפה ביניהן, כדי להשוות כדור מול אריזה
-    const alt = el('img', {
-      class: 'reminder-pic-alt', src: altPh, alt: 'התמונה השנייה', title: 'החלפה',
-      onclick: () => {
-        m.photoMain = (m.photoMain === 'box') ? 'pill' : 'box';
-        S.upsertMed(m);
-        openReminder(slot, nagCount);
-      }
+  // שתי התמונות יחד — האריזה מזהה את המוצר, הכדור מזהה מה בדיוק לבלוע.
+  // כשיש רק אחת היא מוצגת גדולה.
+  const both = m.photoBox && m.photoPill;
+  if (both) {
+    const pair = el('div', { class: 'reminder-pair' });
+    [
+      { src: m.photoPill, label: '💊 הכדור' },
+      { src: m.photoBox, label: '📦 האריזה' }
+    ].forEach(x => {
+      const tile = el('div', { class: 'reminder-tile' });
+      tile.appendChild(el('img', { src: x.src, alt: x.label }));
+      tile.appendChild(el('span', { class: 'reminder-tile-label', text: x.label }));
+      pair.appendChild(tile);
     });
-    const wrap = el('div', { style: 'position:relative' });
-    wrap.appendChild(pic);
-    wrap.appendChild(alt);
-    body.appendChild(wrap);
+    body.appendChild(pair);
   } else {
+    const pic = el('div', { class: 'reminder-pic' });
+    const mainPh = S.medPhoto(m);
+    if (mainPh) pic.appendChild(el('img', { src: mainPh, alt: m.name }));
+    else pic.textContent = '💊';
     body.appendChild(pic);
   }
 

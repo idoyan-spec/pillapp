@@ -1,5 +1,7 @@
 // ============================================================
-//  text.js  —  פנייה אישית בעברית, מותאמת מגדר ושם
+//  text.js  —  פנייה אישית בעברית, מותאמת מגדר, שם וסגנון
+//  ברירת המחדל היא לבבית ואמפתית. תרופות זה לא כיף, והאפליקציה
+//  לא צריכה להישמע כמו מכונה שמצווה עלייך.
 // ============================================================
 import { state } from './store.js';
 import { CONDITIONS } from './schedule.js';
@@ -13,25 +15,28 @@ export function userName() {
   return (state.settings.userName || '').trim();
 }
 
-/** "יהודית, " או "" אם אין שם */
 function vocative() {
   const n = userName();
   return n ? n + ', ' : '';
 }
 
-/** "יהודית" או "את"/"אתה" */
 export function you() {
   return userName() || g('את', 'אתה');
 }
 
-export function greeting(now) {
-  const h = (now || new Date()).getHours();
-  const part = h < 5 ? 'לילה טוב' : h < 11 ? 'בוקר טוב' : h < 16 ? 'צהריים טובים' : h < 19 ? 'אחר צהריים טובים' : 'ערב טוב';
-  const n = userName();
-  return n ? part + ', ' + n : part;
+export const TONES = {
+  warm: { label: '💛 לבבי וחם', hint: 'רך, אמפתי, כמו מישהו שאכפת לו. ברירת המחדל.' },
+  gentle: { label: '🕊️ שקט ועדין', hint: 'מעט מילים, בלי התלהבות, בלי לחץ.' },
+  cheerful: { label: '☀️ קליל ומחייך', hint: 'אופטימי, עם קריצה.' },
+  plain: { label: '📋 ענייני וקצר', hint: 'רק העובדות, בלי קישוטים.' }
+};
+
+export function tone() {
+  return TONES[state.settings.tone] ? state.settings.tone : 'warm';
 }
 
 function pick(arr, seed) {
+  if (!arr || !arr.length) return '';
   if (seed === undefined || seed === null) return arr[Math.floor(Math.random() * arr.length)];
   let h = 0;
   const s = String(seed);
@@ -39,13 +44,39 @@ function pick(arr, seed) {
   return arr[h % arr.length];
 }
 
-/** תיאור המנה: "1 טבליה" / "2 כמוסות" */
+/** בוחר וריאציה לפי הסגנון, עם נפילה אחורה ל"לבבי" */
+function byTone(bank, seed) {
+  const t = tone();
+  return pick(bank[t] || bank.warm, seed);
+}
+
+// ------------------------------------------------------------
+//  ברכות
+// ------------------------------------------------------------
+export function greeting(now) {
+  const h = (now || new Date()).getHours();
+  const part = h < 5 ? 'לילה טוב' : h < 11 ? 'בוקר טוב' : h < 16 ? 'צהריים טובים'
+    : h < 19 ? 'אחר צהריים טובים' : 'ערב טוב';
+  const n = userName();
+  if (!n) return part;
+  const t = tone();
+  if (t === 'plain') return part;
+  if (t === 'cheerful') return part + ', ' + n + ' ☀️';
+  return part + ', ' + n;
+}
+
+// ------------------------------------------------------------
+//  תיאורי מנה
+// ------------------------------------------------------------
 export function doseText(med) {
   const amount = (med.doseText || '1').trim();
   const form = med.form || 'טבליה';
   const n = Number(amount);
   if (!isNaN(n) && n > 1) {
-    const plural = { 'טבליה': 'טבליות', 'כמוסה': 'כמוסות', 'שקית': 'שקיות', 'זריקה': 'זריקות', 'מדבקה': 'מדבקות', 'טיפות': 'טיפות' };
+    const plural = {
+      'טבליה': 'טבליות', 'כמוסה': 'כמוסות', 'שקית': 'שקיות',
+      'זריקה': 'זריקות', 'מדבקה': 'מדבקות', 'טיפות': 'טיפות'
+    };
     return amount + ' ' + (plural[form] || form);
   }
   if (form === 'טיפות') return amount + ' טיפות';
@@ -60,73 +91,184 @@ export function conditionText(med) {
   return base || extra;
 }
 
-/** כותרת התזכורת הגדולה */
+// ------------------------------------------------------------
+//  התזכורת עצמה
+// ------------------------------------------------------------
 export function reminderTitle(med, seed) {
-  return pick([
-    vocative() + 'זה הזמן ל' + med.name,
-    vocative() + g('קחי', 'קח') + ' עכשיו ' + med.name,
-    vocative() + 'אל ' + g('תשכחי', 'תשכח') + ' את ' + med.name
-  ], seed);
+  const n = vocative();
+  const take = g('קחי', 'קח');
+  return byTone({
+    warm: [
+      n + 'זה הזמן ל' + med.name + ' 💛',
+      n + take + ' רגע את ה' + med.name + ', ואני כאן',
+      n + 'תזכורת קטנה ובאהבה: ' + med.name
+    ],
+    gentle: [
+      n + 'הגיע הזמן ל' + med.name,
+      n + med.name + ', כשנוח לך'
+    ],
+    cheerful: [
+      n + 'רגע קטן ל' + med.name + ' ואפשר להמשיך ☀️',
+      n + 'עוד אחת קטנה — ' + med.name + '!'
+    ],
+    plain: [med.name + ' — ' + doseText(med)]
+  }, seed);
 }
 
-/** כותרת למנה שהזמן שלה חלף מזמן — לא אומרים "קחי עכשיו" על מנה ישנה */
+/** כותרת למנה שהזמן שלה חלף — בלי להאשים, בלי "קחי עכשיו" */
 export function lateReminderTitle(med, timeStr, agoStr) {
-  return vocative() + 'המנה של ' + timeStr + ' לא סומנה — ' + agoStr;
+  const n = vocative();
+  return byTone({
+    warm: [n + 'המנה של ' + timeStr + ' עוד לא סומנה — קורה, בואי נסדר את זה'],
+    gentle: [n + 'המנה של ' + timeStr + ' לא סומנה (' + agoStr + ')'],
+    cheerful: [n + 'המנה של ' + timeStr + ' חמקה לנו — נסמן?'],
+    plain: [med.name + ' · ' + timeStr + ' — לא סומן, ' + agoStr]
+  });
 }
 
-/** משפט מלא לקריינות קולית */
 export function reminderSpeech(med, seed) {
   const parts = [];
-  parts.push(vocative() + 'זה הזמן לקחת ' + med.name);
+  const n = vocative();
+  const take = g('קחי', 'קח');
+  parts.push(byTone({
+    warm: [n + 'זה הזמן ל' + med.name],
+    gentle: [n + med.name],
+    cheerful: [n + 'רגע ל' + med.name],
+    plain: [med.name]
+  }, seed));
   parts.push(doseText(med));
   const cond = conditionText(med);
   if (cond) parts.push(cond);
-  return parts.join(', ') + '.';
+  let out = parts.join(', ') + '.';
+  if (tone() === 'warm') out += ' ' + g('שתהיי', 'שתהיה') + ' בריאה.';
+  return out;
 }
 
-/** נדנוד — הולך ומחמיר בנימוס */
+// ------------------------------------------------------------
+//  נדנוד — עקשן, אף פעם לא נוזף
+// ------------------------------------------------------------
+export function nagTitle(med, count) {
+  const banks = {
+    warm: ['עוד לא סומן — הכול בסדר', 'אני עדיין כאן', 'רק מזכירה באהבה', 'זה חשוב לי בשבילך'],
+    gentle: ['עדיין לא סומן', 'תזכורת נוספת', 'עדיין מחכה', 'תזכורת אחרונה'],
+    cheerful: ['עוד לא סימנו!', 'אני לא שוכחת ☀️', 'עדיין כאן ומחייכת', 'נו, רק לחיצה אחת'],
+    plain: ['לא סומן', 'תזכורת 2', 'תזכורת 3', 'תזכורת 4']
+  };
+  const b = banks[tone()] || banks.warm;
+  return b[Math.min(count, b.length - 1)];
+}
+
 export function nagSpeech(med, count) {
   const n = vocative();
-  const lines = [
-    n + 'עדיין לא סימנת שלקחת ' + med.name + '. ' + g('קחי', 'קח') + ' רגע ותסמני.',
-    n + 'תזכורת שנייה: ' + med.name + ' מחכה לך.',
-    n + 'אני לא ' + g('מרפה', 'מרפה') + '. ' + med.name + ' עדיין לא סומן.',
-    n + 'בבקשה אל ' + g('תשכחי', 'תשכח') + ' את ' + med.name + '. זה חשוב.'
-  ];
-  return lines[Math.min(count, lines.length - 1)];
+  const take = g('קחי', 'קח');
+  const banks = {
+    warm: [
+      n + 'עוד לא סימנת את ' + med.name + '. אין לחץ, רק מזכירה.',
+      n + 'אני עדיין כאן עם ' + med.name + '. ' + take + ' כשנוח לך.',
+      n + 'לא מוותרת עלייך. ' + med.name + ' מחכה.',
+      n + 'זה באמת חשוב לבריאות שלך. ' + med.name + '.'
+    ],
+    gentle: [
+      n + med.name + ' עדיין לא סומן.',
+      n + 'תזכורת שנייה: ' + med.name + '.',
+      n + med.name + ' ממתין.',
+      n + 'בבקשה אל ' + g('תשכחי', 'תשכח') + ' את ' + med.name + '.'
+    ],
+    cheerful: [
+      n + 'עוד לא סימנו את ' + med.name + '!',
+      n + 'אני עקשנית בקטע טוב. ' + med.name + '.',
+      n + 'רק לחיצה אחת ואני שותקת.',
+      n + med.name + ' מחכה ומחייך.'
+    ],
+    plain: [
+      med.name + ' לא סומן.',
+      med.name + ' — תזכורת שנייה.',
+      med.name + ' — תזכורת שלישית.',
+      med.name + ' — עדיין לא סומן.'
+    ]
+  };
+  const b = banks[tone()] || banks.warm;
+  return b[Math.min(count, b.length - 1)];
 }
 
-export function nagTitle(med, count) {
-  const opts = ['עדיין לא סומן', 'תזכורת חוזרת', 'זה עדיין מחכה', 'חשוב — אל תדלגי'];
-  if (state.settings.gender === 'm') opts[3] = 'חשוב — אל תדלג';
-  return opts[Math.min(count, opts.length - 1)];
-}
-
+// ------------------------------------------------------------
+//  מצבים אחרים
+// ------------------------------------------------------------
 export function refillText(med, daysLeft) {
-  if (daysLeft <= 0) return vocative() + 'נגמר ה' + med.name + '. צריך לחדש מרשם.';
-  if (daysLeft === 1) return vocative() + 'נשאר יום אחד של ' + med.name + '. כדאי ' + g('להצטייד', 'להצטייד') + ' היום.';
-  return vocative() + 'נשארו ' + daysLeft + ' ימים של ' + med.name + '. כדאי לחדש.';
+  const n = vocative();
+  if (daysLeft <= 0) {
+    return byTone({
+      warm: [n + 'ה' + med.name + ' נגמר. בואי נדאג לחידוש כדי שלא תישארי בלי.'],
+      gentle: [n + 'ה' + med.name + ' נגמר. צריך לחדש מרשם.'],
+      cheerful: [n + 'ה' + med.name + ' אזל! זמן לחידוש.'],
+      plain: [med.name + ' — נגמר.']
+    });
+  }
+  if (daysLeft === 1) {
+    return byTone({
+      warm: [n + 'נשאר יום אחד של ' + med.name + '. שווה לסדר את זה היום, בלי לחץ.'],
+      gentle: [n + 'נשאר יום אחד של ' + med.name + '.'],
+      cheerful: [n + 'יום אחרון של ' + med.name + ' — נחדש?'],
+      plain: [med.name + ' — נשאר יום אחד.']
+    });
+  }
+  return byTone({
+    warm: [n + 'נשארו ' + daysLeft + ' ימים של ' + med.name + '. יש זמן, רק שלא נשכח.'],
+    gentle: [n + 'נשארו ' + daysLeft + ' ימים של ' + med.name + '.'],
+    cheerful: [n + 'עוד ' + daysLeft + ' ימים של ' + med.name + ' — כדאי לחדש.'],
+    plain: [med.name + ' — ' + daysLeft + ' ימים.']
+  });
 }
 
 export function leaveHomeText(meds) {
   const names = meds.map(m => m.name).join(' ו');
-  return vocative() + g('יצאת', 'יצאת') + ' מהבית — ' + g('קחי', 'קח') + ' איתך את ' + names + '.';
+  const n = vocative();
+  const take = g('קחי', 'קח');
+  return byTone({
+    warm: [n + take + ' איתך את ' + names + '. שיהיה לך יום טוב 💛'],
+    gentle: [n + take + ' איתך את ' + names + '.'],
+    cheerful: [n + 'לא לשכוח את ' + names + ' בדרך! ☀️'],
+    plain: ['לקחת: ' + names]
+  });
 }
 
 export function wakeText(count) {
-  return vocative() + greeting() + '. יש לך ' + count + ' ' + (count === 1 ? 'תרופה' : 'תרופות') + ' לבוקר.';
+  const n = vocative();
+  const word = count === 1 ? 'תרופה' : 'תרופות';
+  return byTone({
+    warm: [n + greeting() + '. יש לך ' + count + ' ' + word + ' לבוקר, כשתהיי מוכנה.'],
+    gentle: [n + greeting() + '. ' + count + ' ' + word + ' לבוקר.'],
+    cheerful: [n + greeting() + '! ' + count + ' ' + word + ' ויוצאים לדרך ☀️'],
+    plain: [count + ' ' + word + ' לבוקר.']
+  });
 }
 
 export function allDoneText() {
-  return pick([
-    vocative() + 'סיימת להיום. כל הכבוד.',
-    vocative() + 'הכול מסומן. יום טוב.',
-    vocative() + 'אין עוד תרופות היום.'
-  ]);
+  const n = vocative();
+  return byTone({
+    warm: [
+      n + 'סיימת להיום. שמרת על עצמך יפה 💛',
+      n + 'הכול מסומן. אני גאה בך.',
+      n + 'זהו להיום. תהיי בריאה.'
+    ],
+    gentle: [n + 'הכול מסומן להיום.', n + 'אין עוד תרופות היום.'],
+    cheerful: [n + 'סיימנו! יום מצוין ☀️', n + 'הכול בוצע. אלופה!'],
+    plain: ['הכול סומן.']
+  });
 }
 
 export function procedureText(p) {
   const kinds = { blood_test: 'בדיקת דם', doctor: 'ביקור אצל הרופא', imaging: 'בדיקת הדמיה', other: '' };
   const kind = kinds[p.kind] || '';
   return vocative() + (kind ? kind + ' — ' : '') + p.title;
+}
+
+/** מילת עידוד קצרה אחרי סימון — מוצגת כטוסט */
+export function praise() {
+  return byTone({
+    warm: ['יפה מאוד 💛', 'תודה שסימנת', 'כל הכבוד לך', 'עשית את זה'],
+    gentle: ['סומן', 'נרשם', 'תודה'],
+    cheerful: ['אלופה! ☀️', 'מצוין!', 'ככה זה נראה!'],
+    plain: ['סומן']
+  });
 }

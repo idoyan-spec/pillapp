@@ -247,4 +247,4 @@ Install.init();
 document.addEventListener('pill:installable', () => UI.render());
 document.addEventListener('pill:installed', () => { UI.render(); toast('הותקן! האייקון נמצא במסך הבית.', 'ok', true); });
 
-window.pillApp = { S: S, UI: UI, N: N, Sensors: Sensors, Sch: Sch, Push: Push, Mirror: Mirror, Install: Install, BUILD: S.BUILD };
+window.pillApp = { S: S, UI: UI, N: N, Sensors: Sensors, Sch: Sch, Push: Push, Mirror: Mirror, Install: Install, Nav: Nav, BUILD: S.BUILD };

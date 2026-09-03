@@ -205,6 +205,54 @@ export async function fetchDrugInfo(name, strength) {
 }
 
 // ------------------------------------------------------------
+//  2ב) איתור האזור הרלוונטי בתמונה, לחיתוך
+// ------------------------------------------------------------
+const BOX_SCHEMA = {
+  type: 'object',
+  properties: {
+    found: { type: 'boolean' },
+    box_2d: {
+      type: 'array', items: { type: 'integer' },
+      description: '[ymin, xmin, ymax, xmax] בקנה מידה 0-1000'
+    }
+  },
+  required: ['found']
+};
+
+/**
+ * מחזיר מלבן חיתוך יחסי (0..1) סביב האריזה או הכדור, או null.
+ * @param {string} dataUrl
+ * @param {'box'|'pill'} kind
+ */
+export async function findCropBox(dataUrl, kind) {
+  const subject = kind === 'pill'
+    ? 'הכדור / הטבליה / הכמוסה עצמה'
+    : 'אריזת התרופה או דף ההוראות, כולל כל הטקסט שעליהם';
+  const prompt = [
+    'מצא את המלבן הקטן ביותר שמכיל את ' + subject + ', בלי הרקע מסביב.',
+    'החזר box_2d כארבעה מספרים שלמים [ymin, xmin, ymax, xmax] בקנה מידה 0-1000',
+    'יחסית לגובה ולרוחב התמונה. אם הנושא אינו בתמונה, found=false.'
+  ].join(' ');
+
+  const r = await call({
+    contents: [{ role: 'user', parts: [imgPart(dataUrl), { text: prompt }] }],
+    generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: BOX_SCHEMA }
+  });
+  const j = parseJson(r.text);
+  if (!j.found || !Array.isArray(j.box_2d) || j.box_2d.length !== 4) return null;
+
+  let [y0, x0, y1, x1] = j.box_2d.map(Number);
+  if ([y0, x0, y1, x1].some(n => isNaN(n))) return null;
+  if (y1 < y0) { const t = y0; y0 = y1; y1 = t; }
+  if (x1 < x0) { const t = x0; x0 = x1; x1 = t; }
+  const box = { x: x0 / 1000, y: y0 / 1000, w: (x1 - x0) / 1000, h: (y1 - y0) / 1000 };
+  // מלבן קטן מדי או כמעט כל התמונה — אין טעם לחתוך
+  if (box.w < 0.08 || box.h < 0.08) return null;
+  if (box.w > 0.96 && box.h > 0.96) return null;
+  return box;
+}
+
+// ------------------------------------------------------------
 //  3) הצינור המלא: תמונות ← שדות + כרטיס מידע
 // ------------------------------------------------------------
 export async function identify(photos, onProgress) {

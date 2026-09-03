@@ -51,6 +51,8 @@ function build(m, isNew, opts) {
     { key: 'photoPill', main: 'pill', icon: '💊', label: 'הכדור', hint: 'כדור אחד, מקרוב, על רקע בהיר' }
   ];
 
+  const originals = {};   // תמונות לפני חיתוך, לביטול
+
   function paintPhotos() {
     photoGrid.innerHTML = '';
     SLOTS.forEach(sl => {
@@ -75,9 +77,16 @@ function build(m, isNew, opts) {
         row.appendChild(el('button', {
           class: 'chip', style: 'min-height:40px;padding:0 12px',
           html: '🗑', title: 'מחיקה',
-          onclick: () => { m[sl.key] = ''; paintPhotos(); }
+          onclick: () => { m[sl.key] = ''; delete originals[sl.key]; paintPhotos(); }
         }));
         cell.appendChild(row);
+        if (originals[sl.key]) {
+          cell.appendChild(el('button', {
+            class: 'chip', style: 'margin-top:6px;min-height:38px;font-size:.78em;justify-content:center',
+            text: '↩ ביטול החיתוך',
+            onclick: () => { m[sl.key] = originals[sl.key]; delete originals[sl.key]; paintPhotos(); }
+          }));
+        }
       } else {
         cell.appendChild(el('div', { class: 'hint center', style: 'margin-top:4px', text: sl.hint }));
       }
@@ -104,15 +113,33 @@ function build(m, isNew, opts) {
       const f = input.files && input.files[0];
       if (!f) return;
       try {
-        m[key] = await Tools.fileToDataUrl(f, 1100);
+        const full = await Tools.fileToDataUrl(f, 1400);
+        m[key] = full;
         if (key === 'photoPill') m.photoMain = 'pill';
         paintPhotos();
-        if (S.state.settings.geminiKey) runIdentify();
-        else {
+
+        if (!S.state.settings.geminiKey) {
           aiStatus.classList.remove('hidden');
           aiStatus.className = 'ai-status info';
           aiStatus.innerHTML = 'התמונה נשמרה. כדי שהאפליקציה תמלא את הפרטים לבד — הוסיפי מפתח Gemini ב<b>הגדרות</b>.';
+          return;
         }
+
+        // חיתוך לאזור הרלוונטי — כך הכדור והאריזה נראים גדולים בתזכורת
+        if (S.state.settings.autoCrop) {
+          aiStatus.classList.remove('hidden');
+          aiStatus.className = 'ai-status';
+          aiStatus.innerHTML = '<span class="busy"></span> מאתר את האזור החשוב בתמונה…';
+          try {
+            const box = await G.findCropBox(full, key === 'photoPill' ? 'pill' : 'box');
+            if (box) {
+              m[key] = await Tools.cropToBox(full, box);
+              originals[key] = full;
+              paintPhotos();
+            }
+          } catch (e) { console.warn('[pillApp] חיתוך:', e.message); }
+        }
+        runIdentify();
       } catch (e) { toast(e.message, 'error'); }
     };
     input.click();
