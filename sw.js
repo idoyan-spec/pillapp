@@ -1,7 +1,7 @@
 // ============================================================
 //  sw.js  —  עבודה בלי רשת + טיפול בלחיצה על התראה
 // ============================================================
-const BUILD = '2026-09-02 21:05 v3 dual-photo-id';
+const BUILD = '2026-09-03 10:35 v4 missed-dose-catchup';
 const CACHE = 'pillapp-' + BUILD;
 
 const SHELL = [
@@ -20,6 +20,7 @@ const SHELL = [
   './js/dom.js',
   './js/ui.js',
   './js/editors.js',
+  './js/ics.js',
   './assets/icon-192.png',
   './assets/icon-512.png'
 ];
@@ -27,7 +28,12 @@ const SHELL = [
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE)
-      .then(c => Promise.all(SHELL.map(u => c.add(u).catch(err => console.warn('[sw] לא נשמר', u)))))
+      .then(c => Promise.all(SHELL.map(u =>
+        // cache:'reload' עוקף את מטמון ה-HTTP של הדפדפן.
+        // בלי זה ההתקנה יכולה למלא את המטמון החדש בקבצים ישנים,
+        // והאפליקציה תריץ קוד ישן עם מספר גרסה חדש.
+        c.add(new Request(u, { cache: 'reload' })).catch(() => console.warn('[sw] לא נשמר', u))
+      )))
       .then(() => self.skipWaiting())
   );
 });
@@ -62,15 +68,28 @@ self.addEventListener('fetch', e => {
 
   if (url.origin !== self.location.origin) return;
 
-  // רשת קודם, קאש כגיבוי — כדי שעדכון קוד ייתפס מיד
+  // ניווט (HTML) — רשת קודם, כדי שגרסה חדשה תתגלה מיד
+  if (req.mode === 'navigate') {
+    e.respondWith(
+      fetch(new Request(req, { cache: 'no-cache' }))
+        .then(res => {
+          const copy = res.clone();
+          caches.open(CACHE).then(c => c.put('./index.html', copy)).catch(() => { });
+          return res;
+        })
+        .catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
+
+  // שאר קבצי האפליקציה — מהמטמון של הגרסה הנוכחית.
+  // שם המטמון מכיל את BUILD, כך שכל פריסה יוצרת מטמון חדש שנמלא מהרשת בהתקנה.
   e.respondWith(
-    fetch(req)
-      .then(res => {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => { });
-        return res;
-      })
-      .catch(() => caches.match(req).then(hit => hit || caches.match('./index.html')))
+    caches.match(req).then(hit => hit || fetch(new Request(req, { cache: 'no-cache' })).then(res => {
+      const copy = res.clone();
+      caches.open(CACHE).then(c => c.put(req, copy)).catch(() => { });
+      return res;
+    }))
   );
 });
 

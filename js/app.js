@@ -17,8 +17,19 @@ let swReg = null;
 async function registerSW() {
   if (!('serviceWorker' in navigator)) return null;
   try {
-    swReg = await navigator.serviceWorker.register('sw.js', { scope: './' });
+    // updateViaCache:'none' — sw.js עצמו נמשך תמיד מהרשת, אחרת עדכון עלול לא להתגלה
+    swReg = await navigator.serviceWorker.register('sw.js', { scope: './', updateViaCache: 'none' });
+
+    // כשגרסה חדשה נכנסת לתוקף — טעינה מחדש פעם אחת, כדי שלא ירוץ קוד מעורבב
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloaded) return;
+      reloaded = true;
+      location.reload();
+    });
+
     await navigator.serviceWorker.ready;
+    swReg.update().catch(() => { });
     return swReg;
   } catch (e) {
     console.warn('[pillApp] SW לא נרשם:', e.message);
@@ -139,6 +150,7 @@ function firstRun() {
 // ---------- הפעלה ----------
 (async function boot() {
   wire();
+  N.capturePreviousRun();          // לפני שהדופק הראשון דורס את הערך
   UI.showView('today');
   const reg = await registerSW();
   await N.init(reg);
@@ -154,6 +166,20 @@ function firstRun() {
     setTimeout(firstRun, 400);
   } else if (firstToday && Sch.isQuietDate(today) && st.quiet.showBoard) {
     setTimeout(UI.openShabbat, 600);
+  } else if (!Sch.isQuietDate(today)) {
+    // "לא ירפה" — בפתיחה, מתעמתים מיד עם המנה הכי ותיקה שלא סומנה,
+    // בלי תלות בכמה זמן עבר. זה מה שסוגר את הפער כשהאפליקציה הייתה סגורה.
+    // רק מנה מה-12 שעות האחרונות. על מנה מלפני יומיים אין טעם לקפוץ —
+    // אי אפשר לקחת אותה, והיא מופיעה ממילא בכרטיס "לא סומנו".
+    const missed = Sch.unmarkedSlots().filter(s => s.lateMs <= 12 * 3600000);
+    if (missed.length) {
+      setTimeout(() => {
+        if ($('#sheet').classList.contains('hidden') && $('#reminder').classList.contains('hidden')) {
+          N.primeMedia();
+          UI.openReminder(missed[0], 1);
+        }
+      }, 700);
+    }
   }
 
   // ניקוי מצב נדנוד ישן

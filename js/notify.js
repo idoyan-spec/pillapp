@@ -36,6 +36,22 @@ export function permission() {
   return ('Notification' in window) ? Notification.permission : 'unsupported';
 }
 
+export function hasServiceWorker() { return !!swReg; }
+
+/** התראת בדיקה מושהית — כדי לבדוק אם משהו מגיע כשהאפליקציה סגורה */
+export function testNotificationIn(seconds) {
+  setTimeout(() => {
+    systemNotify({
+      title: '🔔 התראת בדיקה',
+      body: 'אם את רואה את זה והאפליקציה סגורה — ההתראות עובדות אצלך.',
+      tag: 'selftest',
+      sticky: true,
+      data: { kind: 'test' }
+    });
+    chime('gentle');
+  }, seconds * 1000);
+}
+
 /** מפעיל את מנועי הקול/השמע אחרי מגע ראשון של המשתמש (דרישת דפדפן) */
 export function primeMedia() {
   try {
@@ -144,10 +160,23 @@ export function stop() { if (ticker) clearInterval(ticker); ticker = null; }
 
 let lastDailyCheck = '';
 
+/** מתי האפליקציה רצה לאחרונה לפני הפתיחה הנוכחית — עדות לאבחון */
+export let previousRunAt = null;
+export function capturePreviousRun() {
+  previousRunAt = state.runtime.lastTick || null;
+  return previousRunAt;
+}
+
 export function tick() {
   const now = new Date();
   const today = ymd(now);
   const quiet = isQuietDate(today);
+
+  // דופק — מאפשר לומר בוודאות "האפליקציה לא רצה בין X ל-Y"
+  if (!state.runtime.lastTick || (now.getTime() - state.runtime.lastTick) > 60000) {
+    state.runtime.lastTick = now.getTime();
+    save();
+  }
 
   if (quiet) {
     quietDayTick(now, today);

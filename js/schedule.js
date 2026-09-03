@@ -84,19 +84,44 @@ export function overdueSlots(now) {
   return res;
 }
 
-/** מנות שהזמן שלהן חלף לגמרי ולא סומנו (החמצות) */
-export function missedSlots(now) {
+/**
+ * כל המנות שהזמן שלהן חלף ולא סומנו — בלי תקרת זמן.
+ * זה מה שמוצג כשפותחים את האפליקציה: "לא ירפה" חייב להיות בלי חלון זמן,
+ * אחרת מנה שהוחמצה בבוקר פשוט נעלמת בצהריים.
+ */
+export function unmarkedSlots(now, daysBack) {
   now = now || new Date();
-  const maxMs = (state.settings.nagMaxHours || 5) * 3600000;
+  const back = daysBack === undefined ? 2 : daysBack;
   const res = [];
-  for (const off of [-2, -1, 0]) {
+  for (let off = -back; off <= 0; off++) {
     const ds = ymd(addDays(now, off));
     for (const s of slotsForDate(ds)) {
       if (s.status) continue;
-      if (now - s.at > maxMs) res.push(s);
+      if (now - s.at > 0) res.push(Object.assign({ lateMs: now - s.at }, s));
     }
   }
+  res.sort((a, b) => b.lateMs - a.lateMs);
   return res;
+}
+
+/** מנות שכבר יצאו מחלון הנדנוד אבל עדיין לא סומנו */
+export function missedSlots(now) {
+  now = now || new Date();
+  const maxMs = (state.settings.nagMaxHours || 5) * 3600000;
+  return unmarkedSlots(now).filter(s => s.lateMs > maxMs);
+}
+
+/** ניסוח "לפני כמה זמן" */
+export function agoText(ms) {
+  const min = Math.round(ms / 60000);
+  if (min < 1) return 'ממש עכשיו';
+  if (min === 1) return 'לפני דקה';
+  if (min === 2) return 'לפני שתי דקות';
+  if (min < 60) return 'לפני ' + min + ' דקות';
+  const h = Math.round(min / 60);
+  if (h < 24) return 'לפני ' + (h === 1 ? 'שעה' : h === 2 ? 'שעתיים' : h + ' שעות');
+  const d = Math.round(h / 24);
+  return 'לפני ' + (d === 1 ? 'יום' : d === 2 ? 'יומיים' : d + ' ימים');
 }
 
 export function nextSlot(now) {

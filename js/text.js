@@ -69,6 +69,11 @@ export function reminderTitle(med, seed) {
   ], seed);
 }
 
+/** כותרת למנה שהזמן שלה חלף מזמן — לא אומרים "קחי עכשיו" על מנה ישנה */
+export function lateReminderTitle(med, timeStr, agoStr) {
+  return vocative() + 'המנה של ' + timeStr + ' לא סומנה — ' + agoStr;
+}
+
 /** משפט מלא לקריינות קולית */
 export function reminderSpeech(med, seed) {
   const parts = [];

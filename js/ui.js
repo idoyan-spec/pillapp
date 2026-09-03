@@ -8,6 +8,7 @@ import * as N from './notify.js';
 import * as Tools from './tools.js';
 import * as Sensors from './sensors.js';
 import * as G from './gemini.js';
+import * as ICS from './ics.js';
 import { $, el, esc, toast, openSheet, closeSheet, confirmBig, promptBig } from './dom.js';
 import { openMedEditor, openDrugInfo, openProcedureEditor } from './editors.js';
 
@@ -54,7 +55,7 @@ function paintTabBadge() {
   const btn = bar.children[0];
   const old = btn.querySelector('.dot');
   if (old) old.remove();
-  const n = Sch.overdueSlots().length;
+  const n = Sch.unmarkedSlots().length;
   if (n > 0) btn.appendChild(el('span', { class: 'dot', text: String(n) }));
 }
 
@@ -88,6 +89,34 @@ function renderToday() {
     }));
     b.appendChild(el('button', { class: 'btn block', html: '🕯️ פתיחת מסך שבת', onclick: openShabbat }));
     v.appendChild(b);
+  }
+
+  // מנות שלא סומנו — כולל כאלה שכבר יצאו מחלון הנדנוד. בראש המסך, תמיד.
+  const stale = Sch.unmarkedSlots(now).filter(s => s.lateMs > (S.state.settings.nagMaxHours || 5) * 3600000);
+  if (stale.length) {
+    const c = el('div', { class: 'card', style: 'border-color:var(--danger);background:var(--danger-bg)' });
+    c.appendChild(el('div', {
+      class: 'card-title',
+      html: '<span class="ico">⚠️</span> ' + (stale.length === 1 ? 'מנה שלא סומנה' : stale.length + ' מנות שלא סומנו')
+    }));
+    stale.slice(0, 6).forEach(s => {
+      const row = el('div', { class: 'row', style: 'margin-bottom:10px;flex-wrap:wrap' });
+      row.appendChild(el('div', { class: 'grow', style: 'min-width:140px' }, [
+        el('div', { html: '<b>' + esc(s.med.name) + '</b> · ' + esc(T.doseText(s.med)) }),
+        el('div', { class: 'small muted', text: s.time + ' · ' + Sch.agoText(s.lateMs) })
+      ]));
+      row.appendChild(el('button', {
+        class: 'btn ok', text: '✓ לקחתי',
+        onclick: () => { S.markSlot(s.id, 'taken'); N.clearNag(s.id); N.chime('success'); }
+      }));
+      row.appendChild(el('button', {
+        class: 'btn ghost', text: 'דילגתי',
+        onclick: () => { S.markSlot(s.id, 'skipped'); N.clearNag(s.id); }
+      }));
+      c.appendChild(row);
+    });
+    if (stale.length > 6) c.appendChild(el('div', { class: 'small muted', text: 'ועוד ' + (stale.length - 6) + '…' }));
+    v.appendChild(c);
   }
 
   // התראות
@@ -591,6 +620,73 @@ function renderSettings() {
     }
   }));
 
+  // ---------- אבחון: למה תזכורת לא הגיעה ----------
+  const cD = card('🔎', 'בדיקת תזכורות');
+  cD.appendChild(el('div', {
+    class: 'ai-status warn', style: 'margin-bottom:14px',
+    html: '<div class="ai-head">חשוב להבין איך זה עובד</div>' +
+      '<p class="small">התזכורות של האפליקציה רצות <b>בתוך האפליקציה עצמה</b>. כשהיא סגורה, ' +
+      'או אחרי שהיא ברקע זמן ממושך, מערכת ההפעלה מקפיאה אותה — ואז <b>לא תגיע התראה בזמן</b>. ' +
+      'זו מגבלה של דפדפנים, לא תקלה באפליקציה.</p>' +
+      '<p class="small" style="margin-top:6px">שתי דרכים אמינות: להשאיר את האפליקציה פתוחה, ' +
+      'או לייצא את התרופות ליומן של הטלפון (הכפתור למטה) — היומן מצלצל תמיד.</p>'
+  }));
+
+  const diag = el('div', { class: 'diag' });
+  const line = (label, val, good) => {
+    diag.appendChild(el('div', { class: 'diag-row' }, [
+      el('span', { class: 'diag-k', text: label }),
+      el('span', { class: 'diag-v ' + (good === true ? 'ok' : good === false ? 'bad' : ''), text: val })
+    ]));
+  };
+  const perm = N.permission();
+  line('הרשאת התראות', { granted: 'מאושרת ✓', denied: 'חסומה ✗', default: 'לא אושרה', unsupported: 'לא נתמכת' }[perm], perm === 'granted');
+  line('Service Worker', N.hasServiceWorker() ? 'רשום ✓' : 'לא רשום ✗', N.hasServiceWorker());
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  line('מותקנת במסך הבית', standalone ? 'כן ✓' : 'לא — פתוחה בדפדפן', standalone);
+
+  const prev = N.previousRunAt;
+  line('האפליקציה רצה לאחרונה', prev
+    ? new Date(prev).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) + ' (' + Sch.agoText(Date.now() - prev) + ')'
+    : 'זו ההפעלה הראשונה', null);
+
+  const nx = Sch.nextSlot();
+  line('התזכורת הבאה', nx ? nx.med.name + ' · ' + nx.time + (nx.dateStr !== S.ymd() ? ' (' + nx.dateStr + ')' : ' היום') : 'אין מתוכננת', null);
+  const un = Sch.unmarkedSlots().length;
+  line('מנות שלא סומנו', un ? String(un) : 'אין', un === 0);
+  cD.appendChild(diag);
+
+  if (prev) {
+    cD.appendChild(el('p', {
+      class: 'hint', style: 'margin-top:10px',
+      text: 'אם השעה שלמעלה מאוחרת מהתזכורת שפספסת — זו ההוכחה שהאפליקציה פשוט לא רצה באותו רגע.'
+    }));
+  }
+
+  cD.appendChild(el('button', {
+    class: 'btn ghost block', style: 'margin-top:12px', text: '🔔 התראת בדיקה בעוד 30 שניות',
+    onclick: async e => {
+      const b = e.currentTarget;
+      if (await N.requestPermission() !== 'granted') { toast('צריך לאשר התראות קודם', 'warn'); render(); return; }
+      N.testNotificationIn(30);
+      b.disabled = true; b.textContent = 'נשלחה בקשה — סגרי עכשיו את האפליקציה';
+      toast('סגרי את האפליקציה לגמרי. אם ההתראה לא תגיע תוך 30 שניות — זו בדיוק הבעיה.', 'warn', true);
+    }
+  }));
+
+  cD.appendChild(el('button', {
+    class: 'btn block', style: 'margin-top:10px', html: '📅 ייצוא ליומן של הטלפון',
+    onclick: () => {
+      const n = ICS.downloadIcs();
+      if (!n) { toast('אין תרופות עם שעות קבועות לייצוא', 'warn'); return; }
+      toast('יוצאו ' + n + ' תזכורות. פתחי את הקובץ והוסיפי אותו ליומן.', 'ok', true);
+    }
+  }));
+  cD.appendChild(el('p', {
+    class: 'hint',
+    text: 'נוצר קובץ יומן עם תזכורת חוזרת לכל תרופה. פותחים אותו בטלפון ומוסיפים ליומן — ומאותו רגע היומן מזכיר בזמן, גם כשהאפליקציה סגורה. אחרי שינוי תרופות כדאי לייצא שוב.'
+  }));
+
   // ---------- ימים שקטים ----------
   const c3 = card('🕯️', 'ימים שקטים (שבת וחג)');
   c3.appendChild(el('p', { class: 'small muted', text: 'ביום שקט אין נודניק ואין התראות חוזרות — רק כמה הודעות קוליות בשעות שתקבעי, ומסך גדול שאפשר להשאיר פתוח.' }));
@@ -740,7 +836,13 @@ export function openReminder(slot, nagCount) {
   const warn = m.info && m.info.redWarnings && m.info.redWarnings.length ? m.info.redWarnings[0] : null;
   if (warn) body.appendChild(el('div', { class: 'reminder-warn', text: '⚠️ ' + warn }));
 
-  body.appendChild(el('div', { class: 'reminder-kicker', text: T.reminderTitle(m, slot.id) }));
+  // מנה שאיחרה בהרבה: לא אומרים "קחי עכשיו" אלא "לא סומנה"
+  const lateBy = Date.now() - slot.at.getTime();
+  const isOld = !slot.status && lateBy > 90 * 60000;
+  body.appendChild(el('div', {
+    class: 'reminder-kicker',
+    text: isOld ? T.lateReminderTitle(m, slot.time, Sch.agoText(lateBy)) : T.reminderTitle(m, slot.id)
+  }));
 
   const pic = el('div', { class: 'reminder-pic' });
   const mainPh = S.medPhoto(m);
@@ -787,8 +889,14 @@ export function openReminder(slot, nagCount) {
       onclick: () => { S.unmarkSlot(slot.id); closeReminder(); }
     }));
   } else {
+    if (isOld) {
+      acts.appendChild(el('div', {
+        class: 'small muted center', style: 'margin-bottom:2px',
+        text: 'עבר זמן. אם לא בטוחה אם לקחת — אל תיקחי מנה כפולה, סמני "לא לקחתי" ובדקי עם הרוקח.'
+      }));
+    }
     acts.appendChild(el('button', {
-      class: 'btn ok block big', html: '✓ לקחתי',
+      class: 'btn ok block big', html: isOld ? '✓ כן, לקחתי' : '✓ לקחתי',
       onclick: () => {
         S.markSlot(slot.id, 'taken');
         N.clearNag(slot.id);
@@ -821,9 +929,9 @@ export function openReminder(slot, nagCount) {
       onclick: () => openDrugInfo(m)
     }));
     row.appendChild(el('button', {
-      class: 'btn ghost grow', text: 'דילגתי',
+      class: 'btn ghost grow', text: isOld ? 'לא לקחתי' : 'דילגתי',
       onclick: async () => {
-        const ok = await confirmBig('לסמן שלא לקחת את ' + m.name + '?', 'כן, דילגתי');
+        const ok = await confirmBig('לסמן שלא לקחת את ' + m.name + '?', 'כן, לא לקחתי');
         if (ok) { S.markSlot(slot.id, 'skipped'); N.clearNag(slot.id); N.stopSpeaking(); closeReminder(); }
       }
     }));
