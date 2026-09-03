@@ -3,7 +3,7 @@
 // ============================================================
 import * as Mirror from './mirror.js';
 
-export const BUILD = '2026-09-03 12:15 v5 web-push';
+export const BUILD = '2026-09-03 19:35 v6 setup-and-delete';
 
 const KEY = 'pillapp.state.v1';
 

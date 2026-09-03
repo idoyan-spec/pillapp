@@ -40,8 +40,15 @@ document.addEventListener('pill:toast', e => toast(e.detail.text, e.detail.kind,
 // ---------- גיליון תחתון ----------
 let sheetOnClose = null;
 
-export function openSheet(title, buildBody, onClose) {
+export function openSheet(title, buildBody, onClose, headerAction) {
   $('#sheetTitle').textContent = title;
+  const head = $('#sheetPanel').querySelector('.sheet-head');
+  const oldAction = head.querySelector('.sheet-action');
+  if (oldAction) oldAction.remove();
+  if (headerAction) {
+    headerAction.classList.add('sheet-action');
+    head.insertBefore(headerAction, head.querySelector('.sheet-close'));
+  }
   const body = $('#sheetBody');
   body.innerHTML = '';
   const content = buildBody();

@@ -23,7 +23,16 @@ export function openMedEditor(med, opts) {
   const isNew = !med;
   const m = med ? JSON.parse(JSON.stringify(med)) : S.newMed();
 
-  openSheet(isNew ? 'תרופה חדשה' : m.name || 'עריכת תרופה', () => build(m, isNew, opts));
+  // כפתור מחיקה בכותרת — קודם הוא היה רק בתחתית טופס ארוך, ולא נמצא
+  const del = isNew ? null : el('button', {
+    class: 'sheet-close danger', html: '🗑', title: 'מחיקת התרופה', 'aria-label': 'מחיקת התרופה',
+    onclick: async () => {
+      const ok = await confirmBig('למחוק את ' + (m.name || 'התרופה') + ' ואת כל היסטוריית הלקיחות שלה?', 'כן, למחוק', true);
+      if (ok) { S.deleteMed(m.id); closeSheet(); toast('נמחק', 'ok'); }
+    }
+  });
+
+  openSheet(isNew ? 'תרופה חדשה' : m.name || 'עריכת תרופה', () => build(m, isNew, opts), null, del);
 }
 
 function build(m, isNew, opts) {

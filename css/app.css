@@ -529,6 +529,28 @@ input:focus, select:focus, textarea:focus {
 .toast.ok    { background: var(--ok); color: #fff; }
 @keyframes toastin { from { opacity: 0; transform: translateY(14px); } }
 
+/* ---------------- רשימת ההגדרה ---------------- */
+.setup-row {
+  display: flex; align-items: center; gap: 11px;
+  padding: 11px 0; border-bottom: 1.5px solid var(--line);
+}
+.setup-row:last-child { border-bottom: none; }
+.setup-mark {
+  flex: none; width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center; font-weight: 800; font-size: 1.05em;
+  border: 2.5px solid var(--line-2); color: var(--ink-3);
+}
+.setup-row.done .setup-mark { background: var(--ok); border-color: var(--ok); color: #fff; }
+.setup-row.done .setup-label { text-decoration: line-through; opacity: .6; }
+.setup-label { font-weight: 700; }
+
+/* כפתורי פעולה הרסניים */
+.tool-btn.danger, .sheet-close.danger {
+  border-color: var(--danger); color: var(--danger);
+  background: var(--danger-bg);
+}
+.sheet-action { flex: none; }
+
 /* ---------------- לוח אבחון ---------------- */
 .diag {
   border: 2px solid var(--line); border-radius: 14px; overflow: hidden;

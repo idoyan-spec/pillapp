@@ -92,6 +92,32 @@ function renderToday() {
     v.appendChild(b);
   }
 
+  // התזכורות לא יגיעו כשהאפליקציה סגורה — הדבר הכי חשוב שאפשר לתקן, ולכן כאן ולא בהגדרות
+  if (S.state.meds.length && (!S.state.settings.push.enabled || N.permission() !== 'granted')) {
+    const b = el('div', { class: 'card', style: 'border-color:var(--danger);background:var(--danger-bg)' });
+    b.appendChild(el('div', { class: 'card-title', html: '<span class="ico">🔕</span> התזכורות לא יגיעו' }));
+    b.appendChild(el('p', {
+      class: 'small',
+      text: 'כרגע תזכורת תופיע רק אם האפליקציה פתוחה. הפעלה חד־פעמית תגרום לתזכורת להגיע ' +
+        'עם התמונה גם כשהטלפון נעול, ולחזור עד שמסמנים.'
+    }));
+    b.appendChild(el('button', {
+      class: 'btn block big', html: '▶ הפעלת התזכורות',
+      onclick: async e => {
+        const btn = e.currentTarget;
+        btn.disabled = true; btn.innerHTML = '<span class="busy"></span> מפעיל…';
+        try {
+          const r = await Push.enable(S.state.settings.push.server);
+          // אימות מיידי — שלא תצטרכי לחכות עד השעה הבאה כדי לדעת אם זה עובד
+          try { await Push.testPush(); } catch (e2) { /* לא קריטי */ }
+          toast('הופעל! נרשמו ' + r.slots + ' תזכורות. שלחתי התראת בדיקה — היא אמורה להופיע עכשיו.', 'ok', true);
+        } catch (err) { toast(err.message, 'error', true); }
+        render();
+      }
+    }));
+    v.appendChild(b);
+  }
+
   // מנות שלא סומנו — כולל כאלה שכבר יצאו מחלון הנדנוד. בראש המסך, תמיד.
   const stale = Sch.unmarkedSlots(now).filter(s => s.lateMs > (S.state.settings.nagMaxHours || 5) * 3600000);
   if (stale.length) {
@@ -325,10 +351,20 @@ function renderMeds() {
     if (meta.children.length) mid.appendChild(meta);
     row.appendChild(mid);
 
-    row.appendChild(el('button', {
+    const acts = el('div', { class: 'row', style: 'gap:6px' });
+    acts.appendChild(el('button', {
       class: 'tool-btn', html: 'ℹ️', 'aria-label': 'מידע על התרופה',
       onclick: e => { e.stopPropagation(); openDrugInfo(m); }
     }));
+    acts.appendChild(el('button', {
+      class: 'tool-btn danger', html: '🗑', 'aria-label': 'מחיקת התרופה',
+      onclick: async e => {
+        e.stopPropagation();
+        const ok = await confirmBig('למחוק את ' + m.name + ' ואת כל היסטוריית הלקיחות שלה?', 'כן, למחוק', true);
+        if (ok) { S.deleteMed(m.id); toast('נמחק', 'ok'); }
+      }
+    }));
+    row.appendChild(acts);
     card.appendChild(row);
   });
   v.appendChild(card);
@@ -537,8 +573,75 @@ function renderSettings() {
     return cb;
   };
 
+  // ---------- הגדרה מהירה — תמיד ראשון ----------
+  // המסך הזה גדל ל-8 כרטיסים, והדברים הקריטיים נקברו בגלילה.
+  // הרשימה הזאת מראה מה עוד לא מוגדר, ונותנת כפתור ישיר לכל אחד.
+  const steps = [
+    {
+      label: 'השם שלך ולשון הפנייה',
+      done: !!st.userName,
+      hint: 'כדי שהתזכורת תפנה אלייך בשם',
+      btn: 'הגדרה', run: () => scrollToCard('c-personal')
+    },
+    {
+      label: 'אישור התראות',
+      done: N.permission() === 'granted',
+      hint: N.permission() === 'denied' ? 'חסום בדפדפן — צריך לפתוח בהגדרות האתר' : 'בלי זה לא תוצג שום התראה',
+      btn: 'אישור',
+      run: async () => { await N.requestPermission(); render(); }
+    },
+    {
+      label: 'תזכורות כשהאפליקציה סגורה',
+      done: !!st.push.enabled,
+      hint: 'זה מה שגורם לתזכורת להגיע גם כשהטלפון נעול',
+      btn: '▶ הפעלה',
+      run: async e => {
+        const b = e.currentTarget;
+        b.disabled = true; b.innerHTML = '<span class="busy"></span>';
+        try {
+          const r = await Push.enable(st.push.server);
+          try { await Push.testPush(); } catch (e2) { /* לא קריטי */ }
+          toast('הופעל! נרשמו ' + r.slots + ' תזכורות. שלחתי התראת בדיקה — היא אמורה להופיע עכשיו.', 'ok', true);
+        } catch (err) { toast(err.message, 'error', true); }
+        render();
+      }
+    },
+    {
+      label: 'מפתח Gemini',
+      done: !!st.geminiKey,
+      hint: 'לצילום אריזה שממלא לבד, ולמידע על התרופה',
+      btn: 'איך עושים?', run: () => openGeminiSetup()
+    }
+  ];
+
+  const pending = steps.filter(s => !s.done);
+  const cSetup = el('div', {
+    class: 'card',
+    style: pending.length
+      ? 'border-color:var(--due);background:var(--due-bg)'
+      : 'border-color:var(--ok);background:var(--ok-bg)'
+  });
+  cSetup.appendChild(el('div', {
+    class: 'card-title',
+    html: pending.length
+      ? '<span class="ico">🧭</span> נשאר להגדיר ' + pending.length
+      : '<span class="ico">✅</span> הכול מוגדר'
+  }));
+  steps.forEach(s => {
+    const row = el('div', { class: 'setup-row' + (s.done ? ' done' : '') });
+    row.appendChild(el('span', { class: 'setup-mark', text: s.done ? '✓' : '○' }));
+    row.appendChild(el('div', { class: 'grow' }, [
+      el('div', { class: 'setup-label', text: s.label }),
+      s.done ? null : el('div', { class: 'hint', style: 'margin:0', text: s.hint })
+    ]));
+    if (!s.done) row.appendChild(el('button', { class: 'btn', style: 'min-height:46px;padding:8px 16px', html: s.btn, onclick: s.run }));
+    cSetup.appendChild(row);
+  });
+  v.appendChild(cSetup);
+
   // ---------- אישי ----------
   const c1 = card('👤', 'אישי');
+  c1.id = 'c-personal';
   const nameIn = fieldIn(c1, 'איך לקרוא לך?', el('input', { type: 'text', placeholder: 'למשל: יהודית' }),
     'האפליקציה תפנה אלייך בשם הזה בכל תזכורת.');
   nameIn.value = st.userName;
@@ -925,6 +1028,84 @@ function renderSettings() {
   c6.appendChild(el('button', { class: 'btn ghost block', html: '⬆️ ייבוא גיבוי', onclick: () => imp.click() }));
 
   v.appendChild(el('p', { class: 'hint center', text: 'האפליקציה היא עזר לזיכרון בלבד ואינה מחליפה הוראות של רופא או רוקח.' }));
+}
+
+function scrollToCard(id) {
+  const c = document.getElementById(id);
+  if (!c) return;
+  c.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  c.style.transition = 'box-shadow .3s';
+  c.style.boxShadow = '0 0 0 4px var(--info)';
+  setTimeout(() => { c.style.boxShadow = ''; }, 1600);
+}
+
+// ============================================================
+//  הדרכה: איך משיגים מפתח Gemini
+// ============================================================
+export function openGeminiSetup() {
+  openSheet('מפתח Gemini — איך משיגים', () => {
+    const wrap = el('div');
+    wrap.appendChild(el('p', {
+      class: 'small',
+      text: 'המפתח הוא מה שמאפשר שתי יכולות: לצלם אריזה והאפליקציה תמלא את הפרטים לבד, ' +
+        'וכפתור המידע על התרופה. הוא חינם, לוקח דקה, ונשמר רק במכשיר הזה.'
+    }));
+
+    const ol = el('ol', { style: 'padding-inline-start:22px;line-height:1.9' });
+    [
+      'לוחצים על הכפתור הכחול למטה — נפתח האתר של גוגל.',
+      'מתחברים עם חשבון הגוגל (אותו חשבון כמו בטלפון).',
+      'לוחצים על <b>Create API key</b> (או "צור מפתח API").',
+      'מעתיקים את המפתח הארוך שמופיע — מתחיל ב-<span dir="ltr">AIza</span>.',
+      'חוזרים לכאן ומדביקים אותו בשדה שלמטה.'
+    ].forEach(t => ol.appendChild(el('li', { html: t })));
+    wrap.appendChild(ol);
+
+    wrap.appendChild(el('a', {
+      class: 'btn block', style: 'margin:14px 0;text-decoration:none',
+      href: 'https://aistudio.google.com/apikey', target: '_blank', rel: 'noopener',
+      html: '🔗 פתיחת האתר להשגת המפתח'
+    }));
+
+    const keyIn = el('input', { type: 'text', placeholder: 'AIza…', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', dir: 'ltr' });
+    keyIn.value = S.state.settings.geminiKey || '';
+    wrap.appendChild(el('label', { class: 'field' }, [
+      el('span', { class: 'lbl', text: 'הדבקת המפתח כאן' }), keyIn
+    ]));
+
+    const out = el('div', { class: 'hint', style: 'min-height:1.4em' });
+    wrap.appendChild(out);
+
+    wrap.appendChild(el('button', {
+      class: 'btn block big', text: '✓ שמירה ובדיקה',
+      onclick: async e => {
+        const b = e.currentTarget;
+        const k = keyIn.value.trim();
+        if (!k) { toast('צריך להדביק מפתח', 'error'); return; }
+        S.state.settings.geminiKey = k;
+        S.save();
+        b.disabled = true; b.innerHTML = '<span class="busy"></span> בודק…';
+        try {
+          await G.testKey();
+          out.innerHTML = '✅ המפתח עובד.';
+          toast('המפתח נשמר ועובד', 'ok');
+          setTimeout(() => { closeSheet(); render(); }, 900);
+        } catch (err) {
+          out.innerHTML = '⚠️ ' + esc(err.message);
+          b.disabled = false; b.textContent = '✓ שמירה ובדיקה';
+        }
+      }
+    }));
+
+    if (S.state.settings.geminiKey) {
+      wrap.appendChild(el('div', { class: 'spacer' }));
+      wrap.appendChild(el('button', {
+        class: 'btn ghost block', text: '🗑 הסרת המפתח',
+        onclick: () => { S.state.settings.geminiKey = ''; S.save(); closeSheet(); render(); toast('הוסר', 'ok'); }
+      }));
+    }
+    return wrap;
+  });
 }
 
 // ============================================================
