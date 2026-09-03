@@ -44,7 +44,8 @@ export function snapshot(state) {
       quietWeekdays: state.settings.quietWeekdays,
       quietDates: state.settings.quietDates,
       pushId: state.settings.push && state.settings.push.id,
-      pushServer: state.settings.push && state.settings.push.server
+      pushServer: state.settings.push && state.settings.push.server,
+      pushVapid: state.settings.push && state.settings.push.vapidKey
     },
     meds: state.meds.filter(m => m.active).map(m => ({
       id: m.id, name: m.name, strength: m.strength, form: m.form,

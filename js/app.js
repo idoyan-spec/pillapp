@@ -199,12 +199,21 @@ function firstRun() {
 
   // סנכרון לוח המנות לשרת התזכורות
   if (st.push.enabled && st.push.server) {
-    Push.sync().then(r => {
-      if (r) console.log('[pillApp] סונכרנו', r.slots, 'מנות לשרת, עד', r.lastSlot);
-    }).catch(e => {
-      console.warn('[pillApp] סנכרון דחיפות נכשל:', e.message);
-      toast('התזכורות בשרת לא הסתנכרנו: ' + e.message, 'warn', true);
-    });
+    Push.sync()
+      .then(r => {
+        if (r) console.log('[pillApp] סונכרנו', r.slots, 'מנות לשרת, עד', r.lastSlot);
+        // אימות שהשרת באמת מסוגל לשלוח — ומרפא אם המנוי פג
+        return Push.verify(true);
+      })
+      .then(v => {
+        if (v && v.healed) toast('חידשתי את החיבור לתזכורות.', 'ok', true);
+        if (v && v.dead && !v.healed) toast('התזכורות מנותקות. הגדרות ← תזכורות כשהאפליקציה סגורה.', 'error', true);
+        UI.render();
+      })
+      .catch(e => {
+        console.warn('[pillApp] סנכרון דחיפות נכשל:', e.message);
+        toast('התזכורות בשרת לא הסתנכרנו: ' + e.message, 'warn', true);
+      });
   }
   Mirror.write(S.state);
 

@@ -748,27 +748,61 @@ function renderSettings() {
 
   function paintPush() {
     Push.status().then(s => {
-      pStatus.className = 'ai-status ' + (s.enabled && s.subscribed ? 'ok' : s.server ? 'warn' : '');
       const rows = [];
-      rows.push(s.enabled && s.subscribed ? '<b>✅ פעיל</b>' : s.server ? '<b>לא מופעל</b>' : '<b>לא הוגדר שרת</b>');
+      rows.push(s.enabled && s.subscribed ? '<b>✅ מופעל במכשיר</b>' : s.server ? '<b>לא מופעל</b>' : '<b>לא הוגדר שרת</b>');
       if (s.lastSync) rows.push('סונכרן: ' + new Date(s.lastSync).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }));
-      if (s.lastSlot) {
-        const lastDate = s.lastSlot.split('|')[0];
-        const daysLeft = S.daysBetween(new Date(), S.parseYmd(lastDate));
-        rows.push('תזכורות רשומות עד ' + lastDate + (daysLeft <= 5 ? ' ⚠️ (' + daysLeft + ' ימים — כדאי לפתוח שוב כדי לחדש)' : ''));
-      }
-      if (s.endpointHost) rows.push('<span class="muted">' + esc(s.endpointHost) + '</span>');
+      pStatus.className = 'ai-status ' + (s.enabled && s.subscribed ? 'ok' : s.server ? 'warn' : '');
       pStatus.innerHTML = rows.join('<br>');
-      // דופק השרת — עונה על "האם השרת בכלל רץ"
+
+      if (!s.enabled) return;
+      // האמת היחידה שחשובה: האם השרת באמת מסוגל לשלוח אליי עכשיו
+      Push.verify(false).then(v => {
+        if (!v) return;
+        if (v.error) {
+          pStatus.innerHTML += '<br><span style="color:var(--danger)">⚠️ אין קשר לשרת: ' + esc(v.error) + '</span>';
+          return;
+        }
+        if (!v.exists || v.dead) {
+          pStatus.className = 'ai-status warn';
+          pStatus.style.borderColor = 'var(--danger)';
+          pStatus.innerHTML = '<div class="ai-head" style="color:var(--danger)">⚠️ התזכורות מנותקות</div>' +
+            '<p class="small">' + esc(v.dead ? (v.deadReason || 'המנוי פג') : 'השרת לא מכיר את המכשיר הזה') +
+            '. שום תזכורת לא תישלח עד שמחדשים.</p>';
+          const fix = el('button', {
+            class: 'btn danger block', style: 'margin-top:10px', text: '🔄 חידוש החיבור',
+            onclick: async e => {
+              const b = e.currentTarget; b.disabled = true; b.innerHTML = '<span class="busy"></span> מחדש…';
+              try {
+                await Push.resubscribe();
+                try { await Push.testPush(); } catch (e2) { /* ignore */ }
+                toast('חודש. שלחתי התראת בדיקה — היא אמורה להופיע עכשיו.', 'ok', true);
+              } catch (err) { toast(err.message, 'error', true); }
+              render();
+            }
+          });
+          pStatus.appendChild(fix);
+          return;
+        }
+        const bits = [];
+        if (v.nextSlot) bits.push('התזכורת הבאה בשרת: ' + v.nextSlot.replace('|', ' בשעה '));
+        if (v.lastSlot) {
+          const daysLeft = S.daysBetween(new Date(), S.parseYmd(v.lastSlot.split('|')[0]));
+          bits.push('רשומות עד ' + v.lastSlot.split('|')[0] + (daysLeft <= 5 ? ' ⚠️ (כדאי לפתוח שוב כדי לחדש)' : ''));
+        }
+        if (v.lastSentAt) bits.push('נשלחה אחרונה: ' + new Date(v.lastSentAt).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }));
+        pStatus.innerHTML += '<br><span class="small muted">' + bits.join('<br>') + '</span>';
+      }).catch(() => { });
+
       Push.checkServer().then(info => {
         if (!info.lastCron) return;
         const ago = Sch.agoText(Date.now() - new Date(info.lastCron).getTime());
-        pStatus.innerHTML += '<br><span class="small muted">השרת רץ ' + esc(ago) + ' · ' + esc(info.build) + '</span>';
+        pStatus.innerHTML += '<br><span class="small muted">השרת רץ ' + esc(ago) + '</span>';
       }).catch(() => {
         pStatus.innerHTML += '<br><span class="small" style="color:var(--danger)">⚠️ השרת לא עונה</span>';
       });
     }).catch(() => { pStatus.textContent = '—'; });
   }
+
   paintPush();
 
   const pRow = el('div', { class: 'row', style: 'gap:8px;flex-wrap:wrap' });

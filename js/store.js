@@ -3,7 +3,7 @@
 // ============================================================
 import * as Mirror from './mirror.js';
 
-export const BUILD = '2026-09-03 20:10 v7 install-to-home';
+export const BUILD = '2026-09-03 21:30 v8 push-selfheal';
 
 const KEY = 'pillapp.state.v1';
 
@@ -51,7 +51,8 @@ function defaults() {
         id: '',            // מזהה המנוי אצל השרת
         lastSync: 0,
         lastSlot: '',      // המנה האחרונה שנרשמה — כשהיא מתקרבת צריך לפתוח ולסנכרן
-        endpoint: ''
+        endpoint: '',
+        vapidKey: ''       // דרוש ל-SW כדי לחדש מנוי שפג
       },
       lastOpened: null
     },

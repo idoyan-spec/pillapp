@@ -135,6 +135,7 @@ export async function enable(url) {
 
   cfg().enabled = true;
   cfg().endpoint = sub.endpoint;
+  cfg().vapidKey = vjson.publicKey;   // ה-Service Worker צריך אותו כדי לחדש מנוי שפג
   save();
   return sync(sub);
 }
@@ -146,7 +147,18 @@ export async function sync(existingSub) {
   if (!supported()) return null;
 
   const reg = await navigator.serviceWorker.ready;
-  const sub = existingSub || await reg.pushManager.getSubscription();
+  let sub = existingSub || await reg.pushManager.getSubscription();
+
+  // ריפוי עצמי: מנוי יכול לפוג (למשל אחרי התקנה למסך הבית או ניקוי נתונים).
+  // אם ההרשאה קיימת ויש לנו את המפתח — נרשמים מחדש בשקט, בלי להטריד.
+  if (!sub && Notification.permission === 'granted' && c.vapidKey) {
+    try {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true, applicationServerKey: b64ToU8(c.vapidKey)
+      });
+      c.endpoint = sub.endpoint; save();
+    } catch (e) { /* ניפול לשגיאה למטה */ }
+  }
   if (!sub) { c.enabled = false; save(); throw new Error('המנוי לדחיפות אבד. צריך להפעיל מחדש.'); }
 
   const slots = upcomingSlots();
@@ -166,6 +178,64 @@ export async function sync(existingSub) {
   await Mirror.write(state);
   return res;
 }
+
+/**
+ * מנוי שפג לא מתרפא ברישום מחדש של אותו endpoint — צריך לזרוק אותו
+ * ולהירשם מחדש, אחרת מקבלים 410 שוב ושוב.
+ */
+export async function resubscribe() {
+  const c = cfg();
+  if (!supported()) throw new Error('אין תמיכה בדפדפן הזה.');
+  if (Notification.permission !== 'granted') {
+    const p = await Notification.requestPermission();
+    if (p !== 'granted') throw new Error('צריך לאשר התראות.');
+  }
+  let key = c.vapidKey;
+  if (!key) {
+    const vres = await fetch(serverUrl('/api/vapid'));
+    const vjson = await vres.json();
+    key = vjson.publicKey;
+    c.vapidKey = key;
+  }
+  const reg = await navigator.serviceWorker.ready;
+  const old = await reg.pushManager.getSubscription();
+  if (old) { try { await old.unsubscribe(); } catch (e) { /* ignore */ } }
+  const sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true, applicationServerKey: b64ToU8(key)
+  });
+  c.enabled = true;
+  c.endpoint = sub.endpoint;
+  save();
+  return sync(sub);
+}
+
+/**
+ * בודק מול השרת שהוא באמת מסוגל לשלוח, ומרפא אם לא.
+ * זה מה שמונע את המצב שבו הממשק מראה "פעיל" בזמן ששום תזכורת לא תגיע.
+ */
+export async function verify(heal) {
+  const c = cfg();
+  if (!c.enabled || !c.server || !c.id) return { exists: false, enabled: false };
+  let st;
+  try {
+    const res = await fetch(serverUrl('/api/status') + '?id=' + encodeURIComponent(c.id));
+    st = await res.json();
+  } catch (e) { return { error: e.message }; }
+
+  lastStatus = st;
+  const broken = !st.exists || st.dead;
+  if (broken && heal !== false) {
+    try {
+      // מנוי מת -> מנוי חדש לגמרי. חסר בשרת -> מספיק רישום מחדש.
+      const r = st.dead ? await resubscribe() : await sync();
+      st = { exists: true, healed: true, slots: r && r.slots };
+      lastStatus = st;
+    } catch (e) { st.healError = e.message; }
+  }
+  return st;
+}
+
+export let lastStatus = null;
 
 export async function disable() {
   const c = cfg();

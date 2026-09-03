@@ -1,7 +1,7 @@
 // ============================================================
 //  sw.js  —  עבודה בלי רשת + טיפול בלחיצה על התראה
 // ============================================================
-const BUILD = '2026-09-03 20:10 v7 install-to-home';
+const BUILD = '2026-09-03 21:30 v8 push-selfheal';
 const CACHE = 'pillapp-' + BUILD;
 
 const SHELL = [
@@ -201,6 +201,34 @@ async function serverPost(mirror, path, body) {
       body: JSON.stringify(Object.assign({ id: id }, body))
     });
   } catch (e) { /* לא קריטי */ }
+}
+
+// ---------- המנוי פג / הוחלף ----------
+// הדפדפן מודיע כאן כשמנוי דחיפה מתבטל מעצמו (למשל אחרי התקנה למסך
+// הבית). בלי הטיפול הזה המנוי מת בשקט ושום תזכורת לא נשלחת יותר.
+self.addEventListener('pushsubscriptionchange', e => {
+  e.waitUntil((async () => {
+    const mirror = await idbGet();
+    const key = mirror && mirror.settings && mirror.settings.pushVapid;
+    if (!key) return;
+    try {
+      const sub = await self.registration.pushManager.subscribe({
+        userVisibleOnly: true, applicationServerKey: b64ToU8Sw(key)
+      });
+      await serverPost(mirror, '/api/register', { subscription: sub.toJSON() });
+    } catch (err) {
+      console.warn('[sw] חידוש מנוי נכשל', err && err.message);
+    }
+  })());
+});
+
+function b64ToU8Sw(s) {
+  s = String(s).replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  const bin = atob(s);
+  const u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u;
 }
 
 // ---------- קבלת דחיפה ----------

@@ -8,7 +8,7 @@
 // ============================================================
 import { sendPush } from './webpush.js';
 
-const BUILD = '2026-09-03 12:05 push-v2';
+const BUILD = '2026-09-03 21:20 push-v3-selfheal';
 
 const WD = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
@@ -42,6 +42,11 @@ function localParts(date, tz) {
     minutes: Number(hour) * 60 + Number(p.minute),
     weekday: WD[p.weekday]
   };
+}
+
+function todayIn(tz) {
+  try { return localParts(new Date(), tz || 'Asia/Jerusalem').date; }
+  catch (e) { return localParts(new Date(), 'Asia/Jerusalem').date; }
 }
 
 function toMinutes(hm) {
@@ -81,6 +86,24 @@ export default {
       }, 200, origin);
     }
 
+    // מצב המנוי — מאפשר לאפליקציה לדעת אם השרת באמת מסוגל לשלוח אליה
+    if (url.pathname === '/api/status') {
+      const id = url.searchParams.get('id') || '';
+      const rec = id ? await env.SUBS.get('sub:' + id, 'json') : null;
+      if (!rec) return json({ exists: false }, 200, origin);
+      return json({
+        exists: true,
+        slots: (rec.slots || []).length,
+        lastSlot: (rec.slots || [])[(rec.slots || []).length - 1] || null,
+        nextSlot: (rec.slots || []).find(x => x >= todayIn(rec.tz)) || null,
+        dead: !!rec.dead,
+        deadReason: rec.deadReason || null,
+        deadAt: rec.deadAt || null,
+        lastSentAt: rec.lastSentAt || null,
+        updatedAt: rec.updatedAt || null
+      }, 200, origin);
+    }
+
     if (url.pathname === '/api/vapid') {
       if (!env.VAPID_PUBLIC_KEY) return json({ error: 'VAPID לא הוגדר' }, 500, origin);
       return json({ publicKey: env.VAPID_PUBLIC_KEY }, 200, origin);
@@ -97,18 +120,25 @@ export default {
       const rec = {
         id: id,
         subscription: b.subscription,
-        tz: b.tz || 'Asia/Jerusalem',
+        tz: b.tz || (prev && prev.tz) || 'Asia/Jerusalem',
         // רשימת מנות מדויקת: "YYYY-MM-DD|HH:MM". מדויק לכל סוגי התדירות,
         // ומונע דחיפות ריקות בימים שאין בהם תרופה (Chrome שולל הרשאה על כאלה).
+        // בלי slots (למשל רישום מחדש מה-Service Worker) — שומרים את הקיימים
         slots: Array.isArray(b.slots)
           ? b.slots.filter(x => /^\d{4}-\d{2}-\d{2}\|\d{2}:\d{2}$/.test(x)).slice(0, 600)
-          : [],
-        nag: {
-          intervalMin: Math.max(2, Math.min(120, Number(b.nag && b.nag.intervalMin) || 7)),
-          maxHours: Math.max(1, Math.min(12, Number(b.nag && b.nag.maxHours) || 5))
-        },
-        quietWeekdays: Array.isArray(b.quietWeekdays) ? b.quietWeekdays.filter(n => n >= 0 && n <= 6) : [],
+          : ((prev && prev.slots) || []),
+        nag: b.nag ? {
+          intervalMin: Math.max(2, Math.min(120, Number(b.nag.intervalMin) || 7)),
+          maxHours: Math.max(1, Math.min(12, Number(b.nag.maxHours) || 5))
+        } : ((prev && prev.nag) || { intervalMin: 7, maxHours: 5 }),
+        quietWeekdays: Array.isArray(b.quietWeekdays)
+          ? b.quietWeekdays.filter(n => n >= 0 && n <= 6)
+          : ((prev && prev.quietWeekdays) || []),
         acked: (prev && prev.acked) || {},
+        snoozed: (prev && prev.snoozed) || {},
+        // רישום מחדש מנקה סימון "מת" — זה בדיוק מה שמרפא מנוי שפג
+        dead: false, deadReason: null, deadAt: null,
+        lastSentAt: (prev && prev.lastSentAt) || null,
         updatedAt: Date.now()
       };
       await env.SUBS.put('sub:' + id, JSON.stringify(rec));
@@ -155,7 +185,13 @@ export default {
       const rec = await env.SUBS.get('sub:' + b.id, 'json');
       if (!rec) return json({ error: 'לא נמצא' }, 404, origin);
       const r = await sendPush(rec.subscription, JSON.stringify({ test: true }), vapidFrom(env));
-      return json({ ok: r.ok, status: r.status, body: r.body }, r.ok ? 200 : 502, origin);
+      if (r.gone) {
+        rec.dead = true;
+        rec.deadReason = 'המנוי פג או בוטל (' + r.status + ')';
+        rec.deadAt = new Date().toISOString();
+        await env.SUBS.put('sub:' + b.id, JSON.stringify(rec));
+      }
+      return json({ ok: r.ok, status: r.status, gone: r.gone, body: r.body }, r.ok ? 200 : 502, origin);
     }
 
     return json({ error: 'not found', build: BUILD }, 404, origin);
@@ -183,6 +219,7 @@ async function runSchedule(env) {
       let rec;
       try { rec = await env.SUBS.get(entry.name, 'json'); } catch (e) { continue; }
       if (!rec || !rec.slots || !rec.slots.length) continue;
+      if (rec.dead) continue;   // מסומן כפג — נרפא רק ברישום מחדש מהאפליקציה
 
       let local;
       try { local = localParts(now, rec.tz); } catch (e) { local = localParts(now, 'Asia/Jerusalem'); }
@@ -208,8 +245,20 @@ async function runSchedule(env) {
           n: isFirst ? 0 : Math.floor(due / rec.nag.intervalMin)
         });
         const r = await sendPush(rec.subscription, payload, vapid);
-        if (r.ok) sent++;
-        if (r.gone) { await env.SUBS.delete(entry.name); break; }
+        if (r.ok) {
+          sent++;
+          rec.lastSentAt = new Date().toISOString();
+          await env.SUBS.put(entry.name, JSON.stringify(rec));
+        }
+        if (r.gone) {
+          // לא מוחקים — מסמנים. מחיקה שקטה גרמה לכך שהאפליקציה
+          // המשיכה להציג "פעיל" בזמן ששום תזכורת לא יכלה להישלח.
+          rec.dead = true;
+          rec.deadReason = 'המנוי פג או בוטל (' + r.status + ')';
+          rec.deadAt = new Date().toISOString();
+          await env.SUBS.put(entry.name, JSON.stringify(rec));
+          break;
+        }
         if (!r.ok) console.log('push failed', r.status, r.body);
       }
     }
