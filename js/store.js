@@ -1,7 +1,9 @@
 // ============================================================
 //  store.js  —  מודל הנתונים + שמירה מקומית
 // ============================================================
-export const BUILD = '2026-09-03 10:35 v4 missed-dose-catchup';
+import * as Mirror from './mirror.js';
+
+export const BUILD = '2026-09-03 12:30 v5 web-push';
 
 const KEY = 'pillapp.state.v1';
 
@@ -43,6 +45,14 @@ function defaults() {
         lookaheadHours: 10
       },
       refillWarnDays: 7,
+      push: {
+        enabled: false,
+        server: '',        // כתובת ה-Worker
+        id: '',            // מזהה המנוי אצל השרת
+        lastSync: 0,
+        lastSlot: '',      // המנה האחרונה שנרשמה — כשהיא מתקרבת צריך לפתוח ולסנכרן
+        endpoint: ''
+      },
       lastOpened: null
     },
     meds: [],
@@ -113,10 +123,14 @@ export function save() {
   saveTimer = setTimeout(saveNow, 60);
 }
 
+let lastMirror = 0;
 export function saveNow() {
   clearTimeout(saveTimer);
   try {
     localStorage.setItem(KEY, JSON.stringify(state));
+    // שיקוף ל-IndexedDB כדי שה-Service Worker יוכל לבנות התראה מלאה
+    // כשהאפליקציה סגורה. מרוסן — התמונות כבדות.
+    if (Date.now() - lastMirror > 3000) { lastMirror = Date.now(); Mirror.write(state); }
   } catch (e) {
     console.error('[pillApp] שמירה נכשלה', e);
     document.dispatchEvent(new CustomEvent('pill:toast', {
@@ -231,6 +245,7 @@ export function markSlot(sid, status, note) {
   }
   delete state.runtime.nag[sid];
   save();
+  document.dispatchEvent(new CustomEvent('pill:marked', { detail: { slotId: sid, status: status } }));
 }
 export function unmarkSlot(sid) {
   const prev = state.log[sid];

@@ -6,6 +6,8 @@ import * as UI from './ui.js';
 import * as N from './notify.js';
 import * as Sensors from './sensors.js';
 import * as Sch from './schedule.js';
+import * as Push from './push.js';
+import * as Mirror from './mirror.js';
 import { $, el, toast, openSheet, closeSheet } from './dom.js';
 import { openMedEditor } from './editors.js';
 
@@ -86,6 +88,12 @@ function wire() {
 
   document.addEventListener('pill:quietannounce', () => {
     if ($('#shabbat').classList.contains('hidden') && S.state.settings.quiet.showBoard) UI.openShabbat();
+  });
+
+  // מנה סומנה — לומר לשרת שיפסיק לנדנד עליה
+  document.addEventListener('pill:marked', e => {
+    if (!S.state.settings.push.enabled) return;
+    Push.ack([Push.serverKeyOf(e.detail.slotId)]);
   });
 
   // רענון תצוגה בכל שינוי נתונים ובכל טיק
@@ -182,6 +190,23 @@ function firstRun() {
     }
   }
 
+  // סימונים שנעשו מתוך ההתראה כשהאפליקציה היתה סגורה
+  try {
+    const merged = await Mirror.mergeBack(S.state);
+    if (merged) { S.save(); toast('נקלטו ' + merged + ' סימונים מההתראות', 'ok'); }
+  } catch (e) { /* ignore */ }
+
+  // סנכרון לוח המנות לשרת התזכורות
+  if (st.push.enabled && st.push.server) {
+    Push.sync().then(r => {
+      if (r) console.log('[pillApp] סונכרנו', r.slots, 'מנות לשרת, עד', r.lastSlot);
+    }).catch(e => {
+      console.warn('[pillApp] סנכרון דחיפות נכשל:', e.message);
+      toast('התזכורות בשרת לא הסתנכרנו: ' + e.message, 'warn', true);
+    });
+  }
+  Mirror.write(S.state);
+
   // ניקוי מצב נדנוד ישן
   const cutoff = Date.now() - 3 * 86400000;
   Object.keys(S.state.runtime.nag).forEach(k => {
@@ -205,4 +230,4 @@ window.addEventListener('beforeinstallprompt', e => {
   }, 4000);
 });
 
-window.pillApp = { S: S, UI: UI, N: N, Sensors: Sensors, Sch: Sch, BUILD: S.BUILD };
+window.pillApp = { S: S, UI: UI, N: N, Sensors: Sensors, Sch: Sch, Push: Push, Mirror: Mirror, BUILD: S.BUILD };

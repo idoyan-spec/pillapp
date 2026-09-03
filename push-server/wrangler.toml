@@ -1,0 +1,16 @@
+name = "pillapp-push"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+# הסודות (VAPID_PUBLIC_KEY, VAPID_PRIVATE_JWK) אינם כאן ואינם בקוד.
+# בייצור הם נכנסים דרך `wrangler secret put` מתוך Bitwarden Secrets Manager.
+[vars]
+VAPID_SUBJECT = "mailto:idoyan@gmail.com"
+
+[[kv_namespaces]]
+binding = "SUBS"
+id = "PLACEHOLDER_FILL_AFTER_CREATE"
+preview_id = "localdev"
+
+[triggers]
+crons = ["* * * * *"]

@@ -9,6 +9,7 @@ import * as Tools from './tools.js';
 import * as Sensors from './sensors.js';
 import * as G from './gemini.js';
 import * as ICS from './ics.js';
+import * as Push from './push.js';
 import { $, el, esc, toast, openSheet, closeSheet, confirmBig, promptBig } from './dom.js';
 import { openMedEditor, openDrugInfo, openProcedureEditor } from './editors.js';
 
@@ -620,16 +621,102 @@ function renderSettings() {
     }
   }));
 
+  // ---------- תזכורות גם כשהאפליקציה סגורה ----------
+  const cP = card('📲', 'תזכורות כשהאפליקציה סגורה');
+  cP.appendChild(el('p', {
+    class: 'small muted',
+    text: 'זה מה שגורם לתזכורת לקפוץ עם התמונה גם כשהטלפון נעול והאפליקציה סגורה, ולחזור עד שמסמנים. ' +
+      'לשרת עוברים רק תאריכים ושעות — שמות התרופות והתמונות נשארים בטלפון.'
+  }));
+
+  const srvIn = fieldIn(cP, 'כתובת שרת התזכורות', el('input', { type: 'text', placeholder: 'https://…workers.dev', inputmode: 'url', autocapitalize: 'off' }));
+  srvIn.value = st.push.server || '';
+  srvIn.addEventListener('change', () => { st.push.server = srvIn.value.trim().replace(/\/+$/, ''); S.save(); });
+
+  const pStatus = el('div', { class: 'ai-status', style: 'margin-bottom:12px' });
+  cP.appendChild(pStatus);
+
+  function paintPush() {
+    Push.status().then(s => {
+      pStatus.className = 'ai-status ' + (s.enabled && s.subscribed ? 'ok' : s.server ? 'warn' : '');
+      const rows = [];
+      rows.push(s.enabled && s.subscribed ? '<b>✅ פעיל</b>' : s.server ? '<b>לא מופעל</b>' : '<b>לא הוגדר שרת</b>');
+      if (s.lastSync) rows.push('סונכרן: ' + new Date(s.lastSync).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }));
+      if (s.lastSlot) {
+        const lastDate = s.lastSlot.split('|')[0];
+        const daysLeft = S.daysBetween(new Date(), S.parseYmd(lastDate));
+        rows.push('תזכורות רשומות עד ' + lastDate + (daysLeft <= 5 ? ' ⚠️ (' + daysLeft + ' ימים — כדאי לפתוח שוב כדי לחדש)' : ''));
+      }
+      if (s.endpointHost) rows.push('<span class="muted">' + esc(s.endpointHost) + '</span>');
+      pStatus.innerHTML = rows.join('<br>');
+    }).catch(() => { pStatus.textContent = '—'; });
+  }
+  paintPush();
+
+  const pRow = el('div', { class: 'row', style: 'gap:8px;flex-wrap:wrap' });
+  pRow.appendChild(el('button', {
+    class: 'btn ghost grow', text: 'בדיקת השרת',
+    onclick: async e => {
+      const b = e.currentTarget; b.disabled = true; b.innerHTML = '<span class="busy"></span> בודק…';
+      try { const j = await Push.checkServer(srvIn.value.trim()); toast('השרת עונה · ' + j.build, 'ok', true); }
+      catch (err) { toast(err.message, 'error', true); }
+      b.disabled = false; b.textContent = 'בדיקת השרת';
+    }
+  }));
+  pRow.appendChild(el('button', {
+    class: 'btn ' + (st.push.enabled ? 'ghost' : '') + ' grow',
+    text: st.push.enabled ? 'כיבוי' : '▶ הפעלה',
+    onclick: async e => {
+      const b = e.currentTarget; b.disabled = true;
+      try {
+        if (st.push.enabled) { await Push.disable(); toast('כובה', 'ok'); }
+        else {
+          b.innerHTML = '<span class="busy"></span> מפעיל…';
+          const r = await Push.enable(srvIn.value.trim());
+          toast('הופעל · נרשמו ' + r.slots + ' תזכורות', 'ok', true);
+        }
+      } catch (err) { toast(err.message, 'error', true); }
+      b.disabled = false;
+      render();
+    }
+  }));
+  cP.appendChild(pRow);
+
+  if (st.push.enabled) {
+    cP.appendChild(el('button', {
+      class: 'btn ghost block', style: 'margin-top:10px', text: '🔔 שליחת דחיפת בדיקה עכשיו',
+      onclick: async e => {
+        const b = e.currentTarget; b.disabled = true; b.innerHTML = '<span class="busy"></span> שולח…';
+        try { await Push.testPush(); toast('נשלח. סגרי את האפליקציה — ההתראה אמורה להגיע גם ככה.', 'ok', true); }
+        catch (err) { toast(err.message, 'error', true); }
+        b.disabled = false; b.textContent = '🔔 שליחת דחיפת בדיקה עכשיו';
+      }
+    }));
+    cP.appendChild(el('button', {
+      class: 'btn ghost block', style: 'margin-top:10px', text: '🔄 סנכרון לוח התזכורות',
+      onclick: async e => {
+        const b = e.currentTarget; b.disabled = true; b.innerHTML = '<span class="busy"></span> מסנכרן…';
+        try { const r = await Push.sync(); toast('סונכרנו ' + r.slots + ' תזכורות, עד ' + r.lastSlot, 'ok', true); paintPush(); }
+        catch (err) { toast(err.message, 'error', true); }
+        b.disabled = false; b.textContent = '🔄 סנכרון לוח התזכורות';
+      }
+    }));
+  }
+
   // ---------- אבחון: למה תזכורת לא הגיעה ----------
   const cD = card('🔎', 'בדיקת תזכורות');
   cD.appendChild(el('div', {
-    class: 'ai-status warn', style: 'margin-bottom:14px',
-    html: '<div class="ai-head">חשוב להבין איך זה עובד</div>' +
-      '<p class="small">התזכורות של האפליקציה רצות <b>בתוך האפליקציה עצמה</b>. כשהיא סגורה, ' +
-      'או אחרי שהיא ברקע זמן ממושך, מערכת ההפעלה מקפיאה אותה — ואז <b>לא תגיע התראה בזמן</b>. ' +
-      'זו מגבלה של דפדפנים, לא תקלה באפליקציה.</p>' +
-      '<p class="small" style="margin-top:6px">שתי דרכים אמינות: להשאיר את האפליקציה פתוחה, ' +
-      'או לייצא את התרופות ליומן של הטלפון (הכפתור למטה) — היומן מצלצל תמיד.</p>'
+    class: 'ai-status ' + (st.push.enabled ? 'ok' : 'warn'),
+    style: 'margin-bottom:14px',
+    html: st.push.enabled
+      ? '<div class="ai-head">✅ תזכורות שרת פעילות</div>' +
+        '<p class="small">התזכורת נשלחת מהשרת, ולכן היא מגיעה עם התמונה גם כשהאפליקציה סגורה והטלפון נעול, ' +
+        'וחוזרת עד שמסמנים. הבדיקות למטה נשארות שימושיות לאבחון.</p>'
+      : '<div class="ai-head">חשוב להבין איך זה עובד</div>' +
+        '<p class="small">בלי שרת תזכורות, התזכורות רצות <b>בתוך האפליקציה עצמה</b>. כשהיא סגורה, ' +
+        'או אחרי שהיא ברקע זמן ממושך, מערכת ההפעלה מקפיאה אותה — ואז <b>לא תגיע התראה בזמן</b>. ' +
+        'זו מגבלה של דפדפנים, לא תקלה באפליקציה.</p>' +
+        '<p class="small" style="margin-top:6px">הפתרון נמצא בכרטיס <b>"תזכורות כשהאפליקציה סגורה"</b> שמעל.</p>'
   }));
 
   const diag = el('div', { class: 'diag' });
@@ -664,7 +751,17 @@ function renderSettings() {
   }
 
   cD.appendChild(el('button', {
-    class: 'btn ghost block', style: 'margin-top:12px', text: '🔔 התראת בדיקה בעוד 30 שניות',
+    class: 'btn ghost block', style: 'margin-top:12px', html: '👁️ הצגת התראה לדוגמה (כמו שהיא תיראה)',
+    onclick: async e => {
+      const nx = Sch.nextSlot() || Sch.unmarkedSlots()[0];
+      if (!nx) { toast('אין מנה להדגים. הוסיפי תרופה עם שעה.', 'warn'); return; }
+      try { await Push.simulate(nx.dateStr, nx.time); toast('ההתראה הוצגה — הסתכלי במרכז ההתראות', 'ok', true); }
+      catch (err) { toast(err.message, 'error', true); }
+    }
+  }));
+
+  cD.appendChild(el('button', {
+    class: 'btn ghost block', style: 'margin-top:10px', text: '🔔 התראת בדיקה בעוד 30 שניות',
     onclick: async e => {
       const b = e.currentTarget;
       if (await N.requestPermission() !== 'granted') { toast('צריך לאשר התראות קודם', 'warn'); render(); return; }
