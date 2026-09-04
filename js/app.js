@@ -10,6 +10,7 @@ import * as Push from './push.js';
 import * as Mirror from './mirror.js';
 import * as Install from './install.js';
 import * as Nav from './nav.js';
+import * as Legal from './legal.js';
 import { $, el, toast, openSheet, closeSheet } from './dom.js';
 import { openMedEditor } from './editors.js';
 
@@ -177,6 +178,11 @@ function firstRun() {
 
 // ---------- הפעלה ----------
 (async function boot() {
+  // שער התקנון קודם לכל. בלי אישור — שום דבר אחר לא נטען.
+  if (!Legal.accepted()) {
+    await UI.showLegalGate();
+  }
+
   wire();
   N.capturePreviousRun();          // לפני שהדופק הראשון דורס את הערך
   UI.showView('today');
@@ -247,4 +253,4 @@ Install.init();
 document.addEventListener('pill:installable', () => UI.render());
 document.addEventListener('pill:installed', () => { UI.render(); toast('הותקן! האייקון נמצא במסך הבית.', 'ok', true); });
 
-window.pillApp = { S: S, UI: UI, N: N, Sensors: Sensors, Sch: Sch, Push: Push, Mirror: Mirror, Install: Install, Nav: Nav, BUILD: S.BUILD };
+window.pillApp = { S: S, UI: UI, N: N, Sensors: Sensors, Sch: Sch, Push: Push, Mirror: Mirror, Install: Install, Nav: Nav, Legal: Legal, BUILD: S.BUILD };

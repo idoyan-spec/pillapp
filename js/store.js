@@ -3,7 +3,7 @@
 // ============================================================
 import * as Mirror from './mirror.js';
 
-export const BUILD = '2026-09-04 12:40 v12 palettes';
+export const BUILD = '2026-09-04 14:10 v13 terms-gate';
 
 const KEY = 'pillapp.state.v1';
 
@@ -47,6 +47,7 @@ function defaults() {
         radiusM: 250,
         lookaheadHours: 10
       },
+      legal: { acceptedVersion: '', acceptedAt: null },
       refillWarnDays: 7,
       push: {
         enabled: false,

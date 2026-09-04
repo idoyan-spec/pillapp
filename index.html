@@ -77,6 +77,23 @@
     </div>
   </div>
 
+  <!-- ===== תקנון — חוסם כניסה עד לאישור ===== -->
+  <div class="overlay hidden" id="legalGate" role="dialog" aria-modal="true" aria-label="תנאי שימוש">
+    <div class="legal-head">
+      <h2 id="legalTitle">תנאי שימוש</h2>
+      <div class="small muted" id="legalMeta"></div>
+    </div>
+    <div class="legal-body" id="legalBody"></div>
+    <div class="legal-foot">
+      <label class="checkline" id="legalCheckWrap">
+        <input type="checkbox" id="legalCheck">
+        <span>קראתי, הבנתי, ואני מאשר/ת את תנאי השימוש במלואם</span>
+      </label>
+      <button class="btn block big" id="legalAccept" disabled>המשך לאפליקציה</button>
+      <button class="btn ghost block" id="legalDecline">איני מסכים/ה</button>
+    </div>
+  </div>
+
   <!-- ===== גיליון תחתון ===== -->
   <div class="sheet hidden" id="sheet">
     <div class="sheet-panel" id="sheetPanel">

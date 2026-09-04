@@ -13,6 +13,7 @@ import * as Push from './push.js';
 import * as Install from './install.js';
 import * as Perms from './perms.js';
 import * as Nav from './nav.js';
+import * as Legal from './legal.js';
 import { $, el, esc, toast, openSheet, closeSheet, confirmBig, promptBig } from './dom.js';
 import { openMedEditor, openDrugInfo, openProcedureEditor } from './editors.js';
 
@@ -1159,6 +1160,17 @@ function renderSettings() {
   c6.appendChild(imp);
   c6.appendChild(el('button', { class: 'btn ghost block', html: '⬆️ ייבוא גיבוי', onclick: () => imp.click() }));
 
+  const c7 = card('📜', 'תנאי שימוש');
+  const accAt = Legal.acceptedAt();
+  c7.appendChild(el('p', {
+    class: 'small muted',
+    text: accAt
+      ? 'אישרת את גרסה ' + Legal.TERMS_VERSION + ' ב־' +
+        new Date(accAt).toLocaleString('he-IL', { dateStyle: 'medium', timeStyle: 'short' })
+      : 'טרם אושרו.'
+  }));
+  c7.appendChild(el('button', { class: 'btn ghost block', text: '📜 קריאת התקנון', onclick: () => openLegalReader() }));
+
   v.appendChild(el('p', { class: 'hint center', text: 'האפליקציה היא עזר לזיכרון בלבד ואינה מחליפה הוראות של רופא או רוקח.' }));
 }
 
@@ -1169,6 +1181,92 @@ function scrollToCard(id) {
   c.style.transition = 'box-shadow .3s';
   c.style.boxShadow = '0 0 0 4px var(--info)';
   setTimeout(() => { c.style.boxShadow = ''; }, 1600);
+}
+
+// ============================================================
+//  תקנון — שער חובה
+// ============================================================
+function legalHtml() {
+  let h = '<div class="legal-intro">היישום הזה הוא <b>עזר לזיכרון בלבד</b>. ' +
+    'הוא אינו מכשיר רפואי, אינו תחליף לרופא, לרוקח או לעלון, ואין להסתמך עליו. ' +
+    'קראי את התנאים במלואם — אישורם הוא תנאי לשימוש.</div>';
+  Legal.SECTIONS.forEach(sec => {
+    h += '<h3>' + esc(sec.t) + '</h3>';
+    sec.p.forEach(par => {
+      h += par.trim().indexOf('<ul>') === 0 ? par : '<p>' + par + '</p>';
+    });
+  });
+  h += '<p class="hint" style="margin-top:22px">גרסת תקנון ' + esc(Legal.TERMS_VERSION) +
+    ' · ' + esc(Legal.TERMS_DATE) + '</p>';
+  return h;
+}
+
+/** מציג את השער. מחזיר Promise שנפתר רק לאחר אישור. */
+export function showLegalGate() {
+  return new Promise(resolve => {
+    const gate = $('#legalGate');
+    const body = $('#legalBody');
+    const chk = $('#legalCheck');
+    const okBtn = $('#legalAccept');
+    const noBtn = $('#legalDecline');
+
+    $('#legalMeta').textContent = 'גרסה ' + Legal.TERMS_VERSION + ' · ' + Legal.TERMS_DATE +
+      ' · יש לגלול עד הסוף';
+    body.innerHTML = legalHtml();
+    chk.checked = false;
+    okBtn.disabled = true;
+
+    // חייבים גם לגלול עד הסוף וגם לסמן — כדי שהאישור יהיה אמיתי
+    let reachedEnd = false;
+    const hint = el('div', { class: 'legal-scrollhint', text: '↓ גללי עד סוף המסמך כדי לאשר' });
+    $('#legalCheckWrap').before(hint);
+
+    function recheck() {
+      okBtn.disabled = !(reachedEnd && chk.checked);
+    }
+    function onScroll() {
+      if (body.scrollTop + body.clientHeight >= body.scrollHeight - 40) {
+        reachedEnd = true;
+        hint.remove();
+        recheck();
+      }
+    }
+    body.addEventListener('scroll', onScroll);
+    chk.addEventListener('change', recheck);
+    setTimeout(onScroll, 200);   // מסמך קצר ממסך אחד
+
+    okBtn.onclick = () => {
+      if (okBtn.disabled) return;
+      Legal.accept();
+      gate.classList.add('hidden');
+      document.body.style.overflow = '';
+      body.removeEventListener('scroll', onScroll);
+      resolve(true);
+    };
+    noBtn.onclick = () => {
+      body.scrollTop = 0;
+      toast('בלי אישור התנאים לא ניתן להשתמש ביישום.', 'error', true);
+    };
+
+    gate.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  });
+}
+
+/** קריאה חוזרת של התקנון מתוך ההגדרות */
+export function openLegalReader() {
+  openSheet('תנאי שימוש', () => {
+    const wrap = el('div');
+    const at = Legal.acceptedAt();
+    wrap.appendChild(el('div', {
+      class: 'ai-status ok',
+      html: at ? '✅ אישרת את גרסה ' + esc(Legal.TERMS_VERSION) + ' בתאריך ' +
+        esc(new Date(at).toLocaleString('he-IL', { dateStyle: 'medium', timeStyle: 'short' }))
+        : 'טרם אושר'
+    }));
+    wrap.appendChild(el('div', { class: 'legal-body', style: 'padding:0;max-height:none', html: legalHtml() }));
+    return wrap;
+  });
 }
 
 // ============================================================

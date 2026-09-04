@@ -1,7 +1,7 @@
 // ============================================================
 //  sw.js  —  עבודה בלי רשת + טיפול בלחיצה על התראה
 // ============================================================
-const BUILD = '2026-09-04 12:40 v12 palettes';
+const BUILD = '2026-09-04 14:10 v13 terms-gate';
 const CACHE = 'pillapp-' + BUILD;
 
 const SHELL = [
@@ -26,6 +26,7 @@ const SHELL = [
   './js/install.js',
   './js/nav.js',
   './js/perms.js',
+  './js/legal.js',
   './assets/icon-192.png',
   './assets/icon-512.png'
 ];
