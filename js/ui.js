@@ -62,11 +62,26 @@ export function render() {
   if (currentReminder) refreshReminderIfMarked();
 }
 
+export function activePalette() {
+  const p = S.state.settings.palette;
+  if (p === 'f' || p === 'm') return p;
+  return S.state.settings.gender === 'm' ? 'm' : 'f';   // ברירת מחדל לפי הפנייה
+}
+
 function applyLook() {
-  document.documentElement.style.setProperty('--fs', S.state.settings.fontScale || 1);
+  const root = document.documentElement;
+  root.style.setProperty('--fs', S.state.settings.fontScale || 1);
   const th = S.state.settings.theme;
-  if (th === 'auto') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', th);
+  if (th === 'auto') root.removeAttribute('data-theme');
+  else root.setAttribute('data-theme', th);
+
+  root.setAttribute('data-palette', activePalette());
+
+  // צבע סרגל המערכת בטלפון — שיתאים לערכה
+  const bg = getComputedStyle(root).getPropertyValue('--paper').trim();
+  document.querySelectorAll('meta[name="theme-color"]').forEach(mt => {
+    if (bg) mt.setAttribute('content', bg);
+  });
 }
 
 function paintTabBadge() {
@@ -721,6 +736,31 @@ function renderSettings() {
     fs.parentElement.querySelector('.lbl').textContent = 'גודל הכתב: ' + Math.round(st.fontScale * 100) + '%';
   });
   fs.addEventListener('change', () => S.save());
+
+  // ערכת צבעים
+  c1.appendChild(el('div', { class: 'lbl', text: 'ערכת צבעים', style: 'font-weight:700;margin-bottom:6px' }));
+  const palRow = el('div', { class: 'chips', style: 'margin-bottom:6px' });
+  [
+    { v: 'auto', l: 'לפי הפנייה', sw: null },
+    { v: 'f', l: 'ורוד־סגול', sw: '#9c3a74' },
+    { v: 'm', l: 'תכלת־כחול', sw: '#15608f' }
+  ].forEach(o => {
+    const chip = el('button', {
+      class: 'chip' + ((st.palette || 'auto') === o.v ? ' on' : ''),
+      onclick: () => { st.palette = o.v; S.save(); render(); }
+    });
+    if (o.sw) chip.appendChild(el('span', { class: 'swatch', style: 'background:' + o.sw }));
+    chip.appendChild(document.createTextNode(o.l));
+    palRow.appendChild(chip);
+  });
+  c1.appendChild(palRow);
+  c1.appendChild(el('div', {
+    class: 'hint', style: 'margin-bottom:16px',
+    text: (st.palette || 'auto') === 'auto'
+      ? 'כרגע: ' + (activePalette() === 'f' ? 'ורוד־סגול (לשון נקבה)' : 'תכלת־כחול (לשון זכר)') +
+        '. שינוי לשון הפנייה ישנה גם את הצבעים.'
+      : 'נבחרה ידנית, ולא תשתנה עם לשון הפנייה.'
+  }));
 
   const themeRow = el('div', { class: 'chips' });
   [{ v: 'auto', l: 'אוטומטי' }, { v: 'light', l: 'בהיר' }, { v: 'dark', l: 'כהה' }].forEach(o => {

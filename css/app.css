@@ -25,6 +25,9 @@
   --quiet:      #5b4a86;
   --quiet-bg:   #ede9f6;
 
+  --brand:      #1c1a17;
+  --brand-2:    #4a463f;
+
   --radius:     18px;
   --radius-lg:  26px;
   --shadow:     0 2px 0 var(--line-2), 0 8px 24px rgba(28,26,23,.07);
@@ -81,6 +84,105 @@
   --quiet:     #b4a3e0;
   --quiet-bg:  #262040;
   --shadow:    0 2px 0 #000, 0 8px 24px rgba(0,0,0,.35);
+}
+
+/* ============================================================
+   ערכות צבע לפי לשון הפנייה. נטענות אחרי ערכות הבהיר/כהה
+   כדי לגבור עליהן, ובשילוב מפורש עם data-theme למצב הכהה.
+   ============================================================ */
+
+/* --- נקבה: ורוד-סגול --- */
+:root[data-palette="f"] {
+  --paper:   #faf4f8;
+  --paper-2: #ffffff;
+  --paper-3: #f3e6ef;
+  --ink:     #241a22;
+  --ink-2:   #4e3f4b;
+  --ink-3:   #7d6d79;
+  --line:    #e8d5e2;
+  --line-2:  #caa6c1;
+  --brand:   #9c3a74;
+  --brand-2: #6f3f8e;
+  --quiet:     #6f3f8e;
+  --quiet-bg:  #f0e6f7;
+  --info:      #7a3f96;
+  --info-bg:   #f2e8f8;
+  --shadow:  0 2px 0 var(--line-2), 0 8px 24px rgba(90,30,70,.09);
+}
+
+/* --- זכר: תכלת-כחול --- */
+:root[data-palette="m"] {
+  --paper:   #f2f7fb;
+  --paper-2: #ffffff;
+  --paper-3: #e3edf6;
+  --ink:     #17202a;
+  --ink-2:   #3d4a58;
+  --ink-3:   #6b7a89;
+  --line:    #d2e2ef;
+  --line-2:  #9dbdd8;
+  --brand:   #15608f;
+  --brand-2: #2a4d80;
+  --quiet:     #2a4d80;
+  --quiet-bg:  #e5ecf7;
+  --info:      #15608f;
+  --info-bg:   #e2eef8;
+  --shadow:  0 2px 0 var(--line-2), 0 8px 24px rgba(20,60,95,.09);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])[data-palette="f"] {
+    --paper:   #1b141a;
+    --paper-2: #241b23;
+    --paper-3: #2e2230;
+    --ink:     #f6ecf3;
+    --ink-2:   #d3c1cd;
+    --ink-3:   #9c8a97;
+    --line:    #3a2c37;
+    --line-2:  #55404f;
+    --brand:   #e9a3cd;
+    --brand-2: #c69ce8;
+    --quiet:     #c69ce8;
+    --quiet-bg:  #2c2140;
+    --info:      #d5a6ee;
+    --info-bg:   #2b2038;
+    --shadow:  0 2px 0 #000, 0 8px 24px rgba(0,0,0,.4);
+  }
+  :root:not([data-theme="light"])[data-palette="m"] {
+    --paper:   #121a21;
+    --paper-2: #1a242e;
+    --paper-3: #223140;
+    --ink:     #eaf3fa;
+    --ink-2:   #bccbd9;
+    --ink-3:   #8497a8;
+    --line:    #2a3a49;
+    --line-2:  #3e5670;
+    --brand:   #7ec4ee;
+    --brand-2: #9ec9f2;
+    --quiet:     #9ec9f2;
+    --quiet-bg:  #1d2c3e;
+    --info:      #7ec4ee;
+    --info-bg:   #16293a;
+    --shadow:  0 2px 0 #000, 0 8px 24px rgba(0,0,0,.4);
+  }
+}
+
+:root[data-theme="dark"][data-palette="f"] {
+  --paper:   #1b141a; --paper-2: #241b23; --paper-3: #2e2230;
+  --ink:     #f6ecf3; --ink-2:   #d3c1cd; --ink-3:   #9c8a97;
+  --line:    #3a2c37; --line-2:  #55404f;
+  --brand:   #e9a3cd; --brand-2: #c69ce8;
+  --quiet:   #c69ce8; --quiet-bg: #2c2140;
+  --info:    #d5a6ee; --info-bg:  #2b2038;
+  --shadow:  0 2px 0 #000, 0 8px 24px rgba(0,0,0,.4);
+}
+:root[data-theme="dark"][data-palette="m"] {
+  --paper:   #121a21; --paper-2: #1a242e; --paper-3: #223140;
+  --ink:     #eaf3fa; --ink-2:   #bccbd9; --ink-3:   #8497a8;
+  --line:    #2a3a49; --line-2:  #3e5670;
+  --brand:   #7ec4ee; --brand-2: #9ec9f2;
+  --quiet:   #9ec9f2; --quiet-bg: #1d2c3e;
+  --info:    #7ec4ee; --info-bg:  #16293a;
+  --shadow:  0 2px 0 #000, 0 8px 24px rgba(0,0,0,.4);
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -221,8 +323,8 @@ main { padding: 14px; max-width: 720px; margin: 0 auto; }
   min-height: var(--tap);
   padding: 12px 20px;
   border-radius: 16px;
-  border: 2.5px solid var(--ink);
-  background: var(--ink); color: var(--paper);
+  border: 2.5px solid var(--brand);
+  background: var(--brand); color: var(--paper);
   font-weight: 700; font-size: 1.02em;
   cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   transition: transform .08s ease, opacity .15s ease;
@@ -264,7 +366,7 @@ input:focus, select:focus, textarea:focus {
   font-weight: 700; cursor: pointer; min-height: 48px;
   display: inline-flex; align-items: center; gap: 6px;
 }
-.chip.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.chip.on { background: var(--brand); color: var(--paper); border-color: var(--brand); }
 .chip.quiet.on { background: var(--quiet); border-color: var(--quiet); color: #fff; }
 
 .timepills { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -292,10 +394,10 @@ input:focus, select:focus, textarea:focus {
   position: relative;
 }
 .tabbar button .ico { font-size: 1.65em; line-height: 1; }
-.tabbar button.on { color: var(--ink); }
+.tabbar button.on { color: var(--brand); }
 .tabbar button.on::after {
   content: ''; position: absolute; top: 0; inset-inline: 22%;
-  height: 4px; border-radius: 0 0 4px 4px; background: var(--ink);
+  height: 4px; border-radius: 0 0 4px 4px; background: var(--brand);
 }
 .tabbar .dot {
   position: absolute; top: 6px; inset-inline-end: 24%;
@@ -527,7 +629,7 @@ input:focus, select:focus, textarea:focus {
   max-width: 700px; margin: 0 auto;
 }
 .toast {
-  background: var(--ink); color: var(--paper);
+  background: var(--brand); color: var(--paper);
   border-radius: 16px; padding: 13px 18px; font-weight: 700;
   box-shadow: 0 8px 30px rgba(0,0,0,.3);
   animation: toastin .22s ease; pointer-events: auto;
@@ -536,6 +638,13 @@ input:focus, select:focus, textarea:focus {
 .toast.warn  { background: var(--due); color: #fff; }
 .toast.ok    { background: var(--ok); color: #fff; }
 @keyframes toastin { from { opacity: 0; transform: translateY(14px); } }
+
+.swatch {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.75);
+  box-shadow: 0 0 0 1.5px var(--line-2);
+  display: inline-block; flex: none;
+}
 
 /* ---------------- בחירת סגנון ---------------- */
 .tone-opt {

@@ -3,7 +3,7 @@
 // ============================================================
 import * as Mirror from './mirror.js';
 
-export const BUILD = '2026-09-04 11:20 v11 tone-and-crop';
+export const BUILD = '2026-09-04 12:40 v12 palettes';
 
 const KEY = 'pillapp.state.v1';
 
@@ -17,6 +17,7 @@ function defaults() {
       userName: '',
       gender: 'f',                 // 'f' | 'm'
       tone: 'warm',                // warm | gentle | cheerful | plain
+      palette: 'auto',             // auto (לפי הפנייה) | f (ורוד-סגול) | m (תכלת-כחול)
       autoCrop: true,              // חיתוך אוטומטי של תמונות לאזור הרלוונטי
       fontScale: 1,
       theme: 'auto',               // auto | light | dark
