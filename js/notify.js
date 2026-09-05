@@ -67,29 +67,94 @@ export function primeMedia() {
 }
 
 // ------------------------------------------------------------
-//  צליל נעים (מסונתז — בלי קבצים)
+//  ערכות צליל (מסונתזות — בלי קבצי שמע, כדי שהאפליקציה תישאר סטטית)
+//  כל ערכה מגדירה שלושה מצבים: gentle (תזכורת), urgent (נדנוד),
+//  success (סימון). ההבדל בין הערכות הוא סוג הגל, ההשהיה והקצב.
 // ------------------------------------------------------------
-export function chime(kind) {
+export const SOUNDS = {
+  chime: {
+    label: '🎐 פעמון רך',
+    hint: 'שני צלילים עדינים. לא מבהיל. ברירת המחדל.',
+    type: 'sine', decay: 0.9, gap: 0.18, gain: 0.16,
+    gentle: [587.33, 783.99],
+    urgent: [523.25, 622.25, 523.25, 622.25],
+    success: [659.25, 880.0]
+  },
+  bell: {
+    label: '🔔 פעמון דלת',
+    hint: 'צלצול ברור ומתכתי. נשמע היטב גם מחדר אחר.',
+    type: 'triangle', decay: 1.5, gap: 0.34, gain: 0.19,
+    gentle: [1046.5, 830.61],
+    urgent: [1046.5, 830.61, 1046.5, 830.61],
+    success: [830.61, 1046.5]
+  },
+  phone: {
+    label: '📞 צלצול טלפון',
+    hint: 'הכי קשה להתעלם ממנו. מתאים כשהטלפון רחוק.',
+    type: 'square', decay: 0.17, gap: 0.14, gain: 0.09,
+    gentle: [440, 480, 440, 480, 440, 480],
+    urgent: [440, 480, 440, 480, 440, 480, 440, 480, 440, 480],
+    success: [480, 440]
+  },
+  marimba: {
+    label: '🎵 מרימבה',
+    hint: 'שלושה צלילים עגולים ונעימים, כמו קסילופון.',
+    type: 'triangle', decay: 0.55, gap: 0.13, gain: 0.17,
+    gentle: [523.25, 659.25, 783.99],
+    urgent: [523.25, 659.25, 783.99, 659.25, 523.25, 659.25],
+    success: [659.25, 783.99, 1046.5]
+  },
+  alarm: {
+    label: '⏰ שעון מעורר',
+    hint: 'ביפים חדים וחוזרים. הכי מעיר, גם הכי צורמני.',
+    type: 'square', decay: 0.13, gap: 0.23, gain: 0.11,
+    gentle: [880, 880, 880],
+    urgent: [880, 880, 880, 880, 880, 880],
+    success: [660, 880]
+  },
+  none: {
+    label: '🔇 בלי צליל',
+    hint: 'רק רטט והתראה על המסך. מתאים למי שנמצא/ת בין אנשים.',
+    silent: true
+  }
+};
+
+export function soundPack() {
+  return SOUNDS[state.settings.sound] || SOUNDS.chime;
+}
+
+/** @param {'gentle'|'urgent'|'success'} kind  @param {string} [packKey] לתצוגה מקדימה */
+export function chime(kind, packKey) {
+  const pack = (packKey && SOUNDS[packKey]) || soundPack();
+  if (!pack || pack.silent) return;
+  const notes = pack[kind] || pack.gentle;
+  if (!notes || !notes.length) return;
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
     const now = audioCtx.currentTime;
-    const notes = kind === 'success' ? [659.25, 880.0]
-      : kind === 'urgent' ? [523.25, 622.25, 523.25]
-        : [587.33, 783.99];
+    const gap = pack.gap || 0.18;
+    const decay = pack.decay || 0.9;
+    const peak = pack.gain || 0.16;
     notes.forEach((f, i) => {
       const o = audioCtx.createOscillator();
       const gn = audioCtx.createGain();
-      o.type = 'sine';
+      o.type = pack.type || 'sine';
       o.frequency.value = f;
-      const t0 = now + i * 0.18;
+      const t0 = now + i * gap;
       gn.gain.setValueAtTime(0.0001, t0);
-      gn.gain.exponentialRampToValueAtTime(0.16, t0 + 0.04);
-      gn.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
+      gn.gain.exponentialRampToValueAtTime(peak, t0 + 0.03);
+      gn.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);
       o.connect(gn); gn.connect(audioCtx.destination);
-      o.start(t0); o.stop(t0 + 1.0);
+      o.start(t0); o.stop(t0 + decay + 0.05);
     });
   } catch (e) { /* ignore */ }
+}
+
+/** השמעה לדוגמה מתוך ההגדרות, בלי קשר לערכה שנבחרה */
+export function previewSound(packKey) {
+  primeMedia();
+  chime('gentle', packKey);
 }
 
 // ------------------------------------------------------------
@@ -221,8 +286,15 @@ function doseTick(now) {
 function fireReminder(slot, nagCount) {
   const med = slot.med;
   const isNag = nagCount > 0;
-  const title = isNag ? T.nagTitle(med, nagCount - 1) : T.reminderTitle(med, slot.id);
-  const body = med.name + ' · ' + T.doseText(med) + (T.conditionText(med) ? ' · ' + T.conditionText(med) : '');
+  const discreet = T.isDiscreet();
+
+  // במצב דיסקרטי שם התרופה והשם האישי לא יוצאים מהאפליקציה:
+  // לא בקול שנשמע בחדר, ולא בטקסט שמופיע על מסך נעול.
+  const title = isNag ? T.nagTitle(med, nagCount - 1)
+    : discreet ? T.discreetTitle(slot.id) : T.reminderTitle(med, slot.id);
+  const body = discreet
+    ? T.discreetBody(1)
+    : med.name + ' · ' + T.doseText(med) + (T.conditionText(med) ? ' · ' + T.conditionText(med) : '');
 
   chime(isNag ? 'urgent' : 'gentle');
 
@@ -241,7 +313,11 @@ function fireReminder(slot, nagCount) {
       ]
     });
   }
-  speak(isNag ? T.nagSpeech(med, nagCount - 1) : T.reminderSpeech(med, slot.id));
+  if (discreet) {
+    speak(isNag ? T.discreetNagSpeech(nagCount - 1) : T.discreetSpeech(slot.id));
+  } else {
+    speak(isNag ? T.nagSpeech(med, nagCount - 1) : T.reminderSpeech(med, slot.id));
+  }
 }
 
 // ---------- יום שקט (שבת / חג) ----------
@@ -263,7 +339,9 @@ function quietDayTick(now, today) {
   save();
 
   const names = pending.map(s => s.med.name + ' ' + T.doseText(s.med)).join(', ');
-  const msg = T.you() + ', יש לך היום ' + names + '.';
+  const msg = T.isDiscreet()
+    ? 'יש היום ' + pending.length + (pending.length === 1 ? ' תזכורת.' : ' תזכורות.')
+    : T.you() + ', יש לך היום ' + names + '.';
   chime('gentle');
   speak(msg, true);
   document.dispatchEvent(new CustomEvent('pill:quietannounce', { detail: { slots: pending, text: msg } }));
@@ -274,9 +352,11 @@ function supplyTick(now) {
   const low = lowSupplyMeds();
   if (!low.length) return;
   const first = low[0];
-  const body = low.map(x => x.med.name + ' — ' + (x.supply.daysLeft <= 0 ? 'נגמר' : x.supply.daysLeft + ' ימים')).join('\n');
+  const body = T.isDiscreet()
+    ? (low.length === 1 ? 'פריט אחד עומד להיגמר.' : low.length + ' פריטים עומדים להיגמר.') + ' פרטים באפליקציה.'
+    : low.map(x => x.med.name + ' — ' + (x.supply.daysLeft <= 0 ? 'נגמר' : x.supply.daysLeft + ' ימים')).join('\n');
   systemNotify({
-    title: '📦 צריך לחדש תרופות',
+    title: T.isDiscreet() ? '📦 תזכורת הצטיידות' : '📦 צריך לחדש תרופות',
     body: body,
     tag: 'refill',
     data: { kind: 'refill' }
@@ -293,7 +373,9 @@ function supplyTick(now) {
 function procedureTick(now) {
   const list = alertingProcedures();
   if (!list.length) return;
-  const body = list.map(p => p.title + ' — ' + procedureState(p).label).join('\n');
+  const body = T.isDiscreet()
+    ? (list.length === 1 ? 'תור אחד מתקרב.' : list.length + ' תורים מתקרבים.') + ' פרטים באפליקציה.'
+    : list.map(p => p.title + ' — ' + procedureState(p).label).join('\n');
   systemNotify({
     title: '🩺 בדיקות ותורים',
     body: body,

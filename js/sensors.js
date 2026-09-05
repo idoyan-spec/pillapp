@@ -71,10 +71,12 @@ function maybeWakeReminder() {
   save();
   if (!morning.length) return;
 
+  // במצב דיסקרטי לא מזכירים שמות תרופות בהתראה שנראית על מסך נעול
   N.contextAlert(
-    '☀️ ' + T.greeting(now),
-    T.wakeText(morning.length) + ' ' + morning.map(s => s.med.name).join(', '),
-    T.wakeText(morning.length),
+    T.isDiscreet() ? '☀️ בוקר טוב' : '☀️ ' + T.greeting(now),
+    T.isDiscreet() ? T.discreetBody(morning.length)
+      : T.wakeText(morning.length) + ' ' + morning.map(s => s.med.name).join(', '),
+    T.isDiscreet() ? T.discreetSpeech('wake') : T.wakeText(morning.length),
     'wake'
   );
   document.dispatchEvent(new CustomEvent('pill:wake', { detail: { slots: morning } }));
@@ -166,8 +168,10 @@ function fireLeaveHome() {
   lastLeaveAlert = now.getTime();
   const meds = [];
   pending.forEach(s => { if (meds.indexOf(s.med) === -1) meds.push(s.med); });
-  const txt = T.leaveHomeText(meds);
-  N.contextAlert('🚪 יוצאים מהבית', txt + ' (' + pending.map(s => s.time).join(', ') + ')', txt, 'leavehome');
+  const txt = T.isDiscreet()
+    ? T.g('אל תשכחי לקחת איתך את מה שצריך.', 'אל תשכח לקחת איתך את מה שצריך.')
+    : T.leaveHomeText(meds);
+  N.contextAlert('🚪 יוצאים מהבית', txt + (T.isDiscreet() ? '' : ' (' + pending.map(s => s.time).join(', ') + ')'), txt, 'leavehome');
   document.dispatchEvent(new CustomEvent('pill:leavehome', { detail: { meds: meds, slots: pending } }));
 }
 

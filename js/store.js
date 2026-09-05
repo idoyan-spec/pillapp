@@ -3,7 +3,7 @@
 // ============================================================
 import * as Mirror from './mirror.js';
 
-export const BUILD = '2026-09-04 14:10 v13 terms-gate';
+export const BUILD = '2026-09-05 21:20 v14 sound-privacy-install';
 
 const KEY = 'pillapp.state.v1';
 
@@ -25,6 +25,8 @@ function defaults() {
       geminiModel: 'gemini-3.8-flash',
       voiceEnabled: true,
       voiceRate: 0.95,
+      sound: 'chime',              // ערכת הצליל: ראה SOUNDS ב-notify.js
+      privacy: 'open',             // 'open' = אומרים שם | 'discreet' = בלי שם תרופה ובלי שם אישי
       snoozeOptions: [5, 10, 20, 60],
       nagIntervalMin: 7,           // כל כמה דקות לנדנד אם לא סומן
       nagMaxHours: 5,              // עד מתי לנדנד אחרי הזמן
@@ -48,6 +50,12 @@ function defaults() {
         lookaheadHours: 10
       },
       legal: { acceptedVersion: '', acceptedAt: null },
+      install: {                   // הצעת האייקון למסך הבית — נדחפת לבד, לא מחכה שיחפשו אותה
+        asked: 0,                  // כמה פעמים כבר הוצע אוטומטית
+        lastAsk: '',               // באיזה תאריך הוצע לאחרונה — לכל היותר פעם ביום
+        dismissed: false,          // המשתמש/ת ביקש/ה לא להציג שוב
+        done: false                // ההתקנה אושרה
+      },
       refillWarnDays: 7,
       push: {
         enabled: false,

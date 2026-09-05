@@ -236,6 +236,16 @@ function firstRun() {
   }
   Mirror.write(S.state);
 
+  // האייקון במסך הבית — נדחף מעצמו. מי שלא מוצא את "הוספה למסך הבית"
+  // בתפריט הדפדפן פשוט לא יתקין לעולם, וכל פתיחה דרך הדפדפן מסכנת
+  // את ההרשאות ואת התזכורות. הדפדפן דורש מחווה, ולכן ההצעה נתלית
+  // על המגע הבא ולא נפתחת מעצמה מתוך boot().
+  Install.setGuard(() =>
+    $('#sheet').classList.contains('hidden') &&
+    $('#reminder').classList.contains('hidden') &&
+    !document.querySelector('.sheet'));
+  if (!Install.isInstalled()) setTimeout(() => Install.autoOffer(), 2500);
+
   // ניקוי מצב נדנוד ישן
   const cutoff = Date.now() - 3 * 86400000;
   Object.keys(S.state.runtime.nag).forEach(k => {
@@ -252,5 +262,9 @@ function firstRun() {
 Install.init();
 document.addEventListener('pill:installable', () => UI.render());
 document.addEventListener('pill:installed', () => { UI.render(); toast('הותקן! האייקון נמצא במסך הבית.', 'ok', true); });
+document.addEventListener('pill:installresult', e => {
+  UI.render();
+  if (e.detail.outcome === 'accepted') toast('מצוין — האייקון בדרך למסך הבית.', 'ok', true);
+});
 
 window.pillApp = { S: S, UI: UI, N: N, Sensors: Sensors, Sch: Sch, Push: Push, Mirror: Mirror, Install: Install, Nav: Nav, Legal: Legal, BUILD: S.BUILD };

@@ -1,7 +1,7 @@
 // ============================================================
 //  sw.js  —  עבודה בלי רשת + טיפול בלחיצה על התראה
 // ============================================================
-const BUILD = '2026-09-04 14:10 v13 terms-gate';
+const BUILD = '2026-09-05 21:20 v14 sound-privacy-install';
 const CACHE = 'pillapp-' + BUILD;
 
 const SHELL = [
@@ -264,6 +264,9 @@ async function handlePush(data) {
 
   const name = (mirror.settings && mirror.settings.userName || '').trim();
   const fem = !(mirror.settings && mirror.settings.gender === 'm');
+  // מצב דיסקרטי: מסך נעול הוא מקום ציבורי. לא שם תרופה, לא שם אישי,
+  // ולא תמונת הכדור — רק שיש משהו שממתין, והפרטים בתוך האפליקציה.
+  const discreet = mirror.settings && mirror.settings.privacy === 'discreet';
   const log = mirror.log || {};
 
   const due = (mirror.meds || []).filter(m =>
@@ -271,6 +274,31 @@ async function handlePush(data) {
     occursOnSw(m, p.d) &&
     !log[m.id + '|' + p.d + '|' + p.t]
   );
+
+  if (discreet && due.length) {
+    // התראה אחת אנונימית לכל המנות של אותה שעה
+    const sids = due.map(m => m.id + '|' + p.d + '|' + p.t);
+    const nagD = Number(p.n) || 0;
+    const snoozeD = (mirror.settings && mirror.settings.snoozeOptions && mirror.settings.snoozeOptions[1]) || 10;
+    await self.registration.showNotification(due.length > 1 ? 'תזכורת (' + due.length + ')' : 'תזכורת', {
+      body: (fem ? 'פתחי' : 'פתח') + ' את האפליקציה כדי לראות מה ממתין.' + (nagD ? '\n(תזכורת חוזרת)' : ''),
+      icon: './assets/icon-192.png',
+      badge: './assets/badge.png',
+      tag: 'dose-' + sids[0],
+      renotify: true,
+      requireInteraction: true,
+      dir: 'rtl',
+      lang: 'he',
+      vibrate: nagD ? [400, 120, 400, 120, 400] : [300, 100, 300],
+      timestamp: Date.now(),
+      data: { slotId: sids[0], slotIds: sids, date: p.d, time: p.t, kind: 'dose', snoozeMin: snoozeD, discreet: true },
+      actions: [
+        { action: 'open', title: 'פתיחה' },
+        { action: 'snooze', title: '⏰ ' + snoozeD + ' דק׳' }
+      ]
+    });
+    return;
+  }
 
   if (!due.length) {
     // הכול כבר סומן. Chrome מחייב להציג משהו על כל דחיפה, אחרת הוא

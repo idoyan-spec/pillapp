@@ -40,6 +40,8 @@ export function snapshot(state) {
     settings: {
       userName: state.settings.userName,
       gender: state.settings.gender,
+      privacy: state.settings.privacy,      // 'discreet' — ה-SW לא יכתוב שמות בהתראה
+      tone: state.settings.tone,
       snoozeOptions: state.settings.snoozeOptions,
       quietWeekdays: state.settings.quietWeekdays,
       quietDates: state.settings.quietDates,

@@ -153,6 +153,39 @@ function renderToday() {
     v.appendChild(b);
   }
 
+  // אייקון במסך הבית. מוצג בראש המסך ולא נקבר בהגדרות, כי מי שלא מוצא
+  // את "הוספה למסך הבית" בתפריט הדפדפן פשוט לא יתקין לעולם — וכל פתיחה
+  // דרך הדפדפן מסכנת את ההרשאות ואת התזכורות.
+  if (!Install.isInstalled() && !(S.state.settings.install || {}).dismissed) {
+    const b = el('div', { class: 'card', style: 'border-color:var(--info);background:var(--info-bg)' });
+    b.appendChild(el('div', { class: 'card-title', html: '<span class="ico">📲</span> אייקון במסך הבית' }));
+    b.appendChild(el('p', {
+      class: 'small',
+      text: Install.needsManual()
+        ? 'באייפון מוסיפים את האייקון בשתי לחיצות. בלי זה צריך לחפש את האפליקציה בדפדפן בכל פעם.'
+        : 'לחיצה אחת, והאפליקציה תשב במסך הבית כמו כל אפליקציה אחרת — בלי לחפש אותה בדפדפן.'
+    }));
+    const row = el('div', { class: 'row', style: 'gap:10px' });
+    row.appendChild(el('button', {
+      class: 'btn grow big', html: '📲 הוספה עכשיו',
+      onclick: async e => {
+        if (Install.canPrompt()) {
+          e.currentTarget.disabled = true;
+          const r = await Install.prompt();
+          if (r === 'accepted') { toast('מתקין… האייקון יופיע במסך הבית.', 'ok', true); }
+          else { openInstallHelp(); }
+          render();
+        } else openInstallHelp();
+      }
+    }));
+    row.appendChild(el('button', {
+      class: 'btn ghost', text: 'לא עכשיו',
+      onclick: () => { Install.stopOffering(); render(); toast('אפשר להוסיף בכל רגע מההגדרות.', 'info'); }
+    }));
+    b.appendChild(row);
+    v.appendChild(b);
+  }
+
   // מנות שלא סומנו — כולל כאלה שכבר יצאו מחלון הנדנוד. בראש המסך, תמיד.
   const stale = Sch.unmarkedSlots(now).filter(s => s.lateMs > (S.state.settings.nagMaxHours || 5) * 3600000);
   if (stale.length) {
@@ -223,12 +256,11 @@ function renderToday() {
   if (alerts.children.length) v.appendChild(alerts);
 
   if (!S.state.meds.length) {
-    v.appendChild(el('div', { class: 'empty' }, [
+    v.appendChild(el('div', { class: 'empty', style: 'padding-bottom:4px' }, [
       el('div', { class: 'big', text: '💊' }),
-      el('h2', { text: 'עוד לא הוספת תרופות' }),
-      el('p', { text: 'אפשר לצלם את האריזה — והאפליקציה תמלא את הפרטים לבד.' }),
-      el('button', { class: 'btn big', html: '＋ הוספת תרופה ראשונה', onclick: () => openMedEditor(null) })
+      el('h2', { text: 'עוד לא הוספת תרופות' })
     ]));
+    v.appendChild(addMedTile({ title: 'הוספת התרופה הראשונה' }));
     return;
   }
 
@@ -263,6 +295,35 @@ function renderToday() {
     done.forEach(s => details.appendChild(doseCard(s, now)));
     v.appendChild(details);
   }
+}
+
+/**
+ * משבצת "הוספת תרופה" — כפתור הצילום יושב בתוכה ולא כפתור נפרד לידה,
+ * כדי שיהיה ברור שצילום הוא *דרך להוסיף תרופה*, ולא כלי בפני עצמו.
+ */
+function addMedTile(opts) {
+  opts = opts || {};
+  const tile = el('div', { class: 'add-tile' });
+  tile.appendChild(el('div', { class: 'add-tile-head' }, [
+    el('span', { class: 'add-tile-plus', text: '＋' }),
+    el('span', { text: opts.title || 'הוספת תרופה' })
+  ]));
+
+  tile.appendChild(el('button', {
+    class: 'btn block big', style: 'margin-bottom:6px',
+    html: '📷 צילום האריזה',
+    onclick: () => { N.primeMedia(); openMedEditor(null, { startWithCamera: true }); }
+  }));
+  tile.appendChild(el('div', {
+    class: 'hint', style: 'margin:0 0 12px;text-align:center',
+    text: 'מצלמים את האריזה, והשם, המינון והצורה מתמלאים לבד.'
+  }));
+
+  tile.appendChild(el('button', {
+    class: 'btn ghost block', html: '✍️ הקלדה ידנית',
+    onclick: () => { N.primeMedia(); openMedEditor(null); }
+  }));
+  return tile;
 }
 
 function sectionTitle(text, count) {
@@ -339,21 +400,11 @@ function renderMeds() {
   v.innerHTML = '';
   v.appendChild(el('h1', { text: 'התרופות שלי' }));
 
-  const addRow = el('div', { class: 'row', style: 'gap:10px;margin-bottom:18px' });
-  addRow.appendChild(el('button', {
-    class: 'btn grow big', html: '📷 צילום אריזה',
-    onclick: () => openMedEditor(null, { startWithCamera: true })
-  }));
-  addRow.appendChild(el('button', {
-    class: 'btn ghost grow big', html: '✍️ הקלדה',
-    onclick: () => openMedEditor(null)
-  }));
-  v.appendChild(addRow);
+  v.appendChild(addMedTile());
 
   if (!S.state.meds.length) {
     v.appendChild(el('div', { class: 'empty' }, [
-      el('div', { class: 'big', text: '💊' }),
-      el('p', { text: 'הרשימה ריקה.' })
+      el('p', { text: 'הרשימה עדיין ריקה.' })
     ]));
     return;
   }
@@ -645,7 +696,7 @@ function renderSettings() {
     },
     {
       label: 'אייקון במסך הבית',
-      done: Install.isInstalled(),
+      done: Install.isInstalled() || !!(st.install || {}).dismissed,
       hint: 'כדי לפתוח בלחיצה אחת, בלי לחפש בדפדפן',
       btn: 'התקנה', run: () => openInstallHelp()
     },
@@ -785,6 +836,68 @@ function renderSettings() {
     c2.appendChild(el('div', { class: 'spacer' }));
   }
 
+  // ---- ערכת הצליל ----
+  c2.appendChild(el('div', { class: 'lbl', text: 'איזה צליל להשמיע', style: 'font-weight:700;margin-bottom:6px' }));
+  const soundWrap = el('div', { style: 'margin-bottom:6px' });
+  Object.keys(N.SOUNDS).forEach(k => {
+    const sd = N.SOUNDS[k];
+    const on = (st.sound || 'chime') === k;
+    const row = el('button', {
+      class: 'tone-opt' + (on ? ' on' : ''),
+      onclick: () => { st.sound = k; S.save(); N.previewSound(k); render(); }
+    }, [
+      el('span', { class: 'tone-mark', text: on ? '●' : '○' }),
+      el('div', { class: 'grow', style: 'text-align:start' }, [
+        el('div', { style: 'font-weight:800', text: sd.label }),
+        el('div', { class: 'hint', style: 'margin:0', text: sd.hint })
+      ]),
+      sd.silent ? null : el('span', {
+        class: 'tool-btn', html: '▶', 'aria-label': 'השמעה',
+        onclick: e => { e.stopPropagation(); N.previewSound(k); }
+      })
+    ]);
+    soundWrap.appendChild(row);
+  });
+  c2.appendChild(soundWrap);
+  c2.appendChild(el('div', {
+    class: 'hint', style: 'margin-bottom:16px',
+    text: 'הצליל הזה נשמע כשהאפליקציה פתוחה. כשהיא סגורה, הטלפון משמיע את צליל ההתראות שלו — ' +
+      'אפשר לשנות אותו בהגדרות ההתראות של המכשיר.'
+  }));
+
+  // ---- מה נאמר ומה מופיע על מסך נעול ----
+  c2.appendChild(el('div', { class: 'lbl', text: 'מה נשמע ומה מופיע על המסך', style: 'font-weight:700;margin-bottom:6px' }));
+  const privWrap = el('div', { style: 'margin-bottom:6px' });
+  [
+    {
+      v: 'open', label: '🗣️ עם שם התרופה ובשמך',
+      hint: 'הכי ברור: "יהודית, זה הזמן לאקמול, טבליה אחת". ברירת המחדל.'
+    },
+    {
+      v: 'discreet', label: '🤫 בלי שמות — דיסקרטי',
+      hint: 'רק "יש לך תזכורת". שם התרופה והשם שלך לא נשמעים בחדר ולא מופיעים על מסך נעול.'
+    }
+  ].forEach(o => {
+    const on = (st.privacy || 'open') === o.v;
+    privWrap.appendChild(el('button', {
+      class: 'tone-opt' + (on ? ' on' : ''),
+      onclick: () => { st.privacy = o.v; S.save(); render(); }
+    }, [
+      el('span', { class: 'tone-mark', text: on ? '●' : '○' }),
+      el('div', { class: 'grow', style: 'text-align:start' }, [
+        el('div', { style: 'font-weight:800', text: o.label }),
+        el('div', { class: 'hint', style: 'margin:0', text: o.hint })
+      ])
+    ]));
+  });
+  c2.appendChild(privWrap);
+  c2.appendChild(el('div', {
+    class: 'hint', style: 'margin-bottom:16px',
+    text: (st.privacy === 'discreet')
+      ? 'התזכורת הגדולה בתוך האפליקציה ממשיכה להראות הכול — שם, תמונה ומינון. מסתירים רק את מה שיוצא החוצה.'
+      : 'אם יש אנשים בסביבה שלא צריכים לדעת מה את לוקחת, כדאי לבחור "דיסקרטי".'
+  }));
+
   checkIn(c2, 'הקראה קולית של התזכורות', st.voiceEnabled, x => { st.voiceEnabled = x; S.save(); });
   const rate = fieldIn(c2, 'מהירות הדיבור', el('input', { type: 'range', min: 0.6, max: 1.3, step: 0.05 }));
   rate.value = st.voiceRate;
@@ -814,8 +927,8 @@ function renderSettings() {
       const m = S.state.meds[0];
       if (!m) { toast('קודם הוסיפי תרופה אחת', 'warn'); return; }
       N.chime('gentle');
-      N.speak(T.reminderSpeech(m), true);
-      toast('כך תישמע התזכורת', 'ok');
+      N.speak(T.isDiscreet() ? T.discreetSpeech('test') : T.reminderSpeech(m), true);
+      toast(T.isDiscreet() ? 'כך תישמע התזכורת — בלי שמות' : 'כך תישמע התזכורת', 'ok');
     }
   }));
 
@@ -1357,6 +1470,16 @@ export function openPermissions(auto) {
         } catch (e) { note.innerHTML += '<br>⚠️ ' + esc(e.message); }
         render();
       }
+
+      // מיד אחרי האישורים — האייקון במסך הבית. זה הרגע היחיד שבו
+      // המשתמש/ת כבר בתוך "מסדרים הכול", ולכן ההצעה לא נתפסת כהפרעה.
+      if (!Install.isInstalled() && Install.canPrompt() && Install.shouldOffer()) {
+        const r = await Install.prompt();
+        if (r === 'accepted') note.innerHTML += '<br>✅ האייקון נוסף למסך הבית.';
+        render();
+      } else if (!Install.isInstalled() && Install.needsManual()) {
+        note.innerHTML += '<br>נשאר רק להוסיף אייקון למסך הבית.';
+      }
     });
 
     paint();
@@ -1428,6 +1551,19 @@ export function openInstallHelp() {
     wrap.appendChild(el('p', {
       class: 'hint',
       text: 'חשוב: להתקין מאותו דפדפן שבו כבר הגדרת את האפליקציה — כל הנתונים והתזכורות עוברים איתה.'
+    }));
+
+    const cfg = S.state.settings.install || {};
+    wrap.appendChild(el('button', {
+      class: 'btn ghost block', style: 'margin-top:10px',
+      text: cfg.dismissed ? 'להציע לי שוב את ההוספה למסך הבית' : 'לא להציע לי את זה יותר',
+      onclick: () => {
+        if (cfg.dismissed) { cfg.dismissed = false; cfg.asked = 0; cfg.lastAsk = ''; }
+        else cfg.dismissed = true;
+        S.save();
+        closeSheet();
+        render();
+      }
     }));
     return wrap;
   });

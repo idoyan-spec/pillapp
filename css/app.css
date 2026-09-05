@@ -258,6 +258,30 @@ main { padding: 14px; max-width: 720px; margin: 0 auto; }
 .card-title { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-weight: 700; }
 .card-title .ico { font-size: 1.3em; }
 
+/* ---------------- משבצת "הוספת תרופה" ----------------
+   הצילום הוא דרך להוסיף תרופה, ולכן הוא יושב *בתוך* המשבצת
+   ולא ככפתור עצמאי לידה. המסגרת המקווקוות אומרת "כאן מוסיפים". */
+.add-tile {
+  border: 3px dashed var(--brand);
+  border-radius: var(--radius);
+  background: var(--paper-2);
+  padding: 14px;
+  margin-bottom: 18px;
+}
+.add-tile-head {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 800; font-size: 1.15em;
+  margin-bottom: 12px;
+}
+.add-tile-plus {
+  flex: none;
+  width: 38px; height: 38px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 1.25em; font-weight: 800; line-height: 1;
+  background: var(--brand); color: var(--paper-2);
+}
+.add-tile .hint { font-size: .95em; }
+
 /* ---------------- כרטיס מנה בלוח הלקיחות ---------------- */
 .dose {
   display: grid;
