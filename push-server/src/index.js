@@ -8,7 +8,7 @@
 // ============================================================
 import { sendPush } from './webpush.js';
 
-const BUILD = '2026-09-04 09:10 push-v4-diag';
+const BUILD = '2026-09-18 00:45 push-v5-kv-index';
 
 const WD = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
@@ -63,6 +63,65 @@ function vapidFrom(env) {
 }
 
 // ------------------------------------------------------------
+//  אינדקס המנויים
+//
+//  למה זה קיים: ה-cron רץ כל דקה, וקודם לכן הוא קרא ל-SUBS.list()
+//  בכל ריצה — 1,440 פעולות list ביום מול מכסה חינמית של 1,000.
+//  המכסה נגמרה כל יום אחר הצהריים, ומאותו רגע ה-list החזיר 429
+//  וכל התזכורות שאחריו נשתקו בשקט, בלי שום שגיאה גלויה במכשיר.
+//
+//  עכשיו: מפתח יחיד שמחזיק את רשימת ה-id-ים, שנקרא ב-get.
+//  מכסת הקריאות היא 100,000 ביום, כך ש-1,440 קריאות הן טיפה בים.
+//  list() נשאר רק כמסלול חילוץ: כשהאינדקס חסר, ופעם ביום כרשת
+//  ביטחון מפני סחיפה בין האינדקס למפתחות שבפועל.
+// ------------------------------------------------------------
+const IDX = 'idx:subs';
+
+// בונה את האינדקס מ-list. מחזיר null אם ה-list נכשל — ואז במפורש
+// לא כותבים כלום, כדי שמכסה שנגמרה לא תנציח אינדקס ריק.
+async function rebuildIndex(env) {
+  const built = [];
+  let cursor;
+  try {
+    do {
+      const page = await env.SUBS.list({ prefix: 'sub:', cursor: cursor });
+      for (const k of page.keys) built.push(k.name.slice(4));
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+  } catch (e) {
+    return null;
+  }
+  try { await env.SUBS.put(IDX, JSON.stringify(built)); } catch (e) { /* ignore */ }
+  return built;
+}
+
+async function readIndex(env) {
+  try {
+    const ids = await env.SUBS.get(IDX, 'json');
+    if (Array.isArray(ids)) return ids;
+  } catch (e) { /* ignore */ }
+  return await rebuildIndex(env);
+}
+
+async function addToIndex(env, id) {
+  const ids = await readIndex(env);
+  // אינדקס לא זמין — לא כותבים, כדי לא לדרוס מנויים קיימים.
+  // המנוי עצמו כבר שמור תחת sub:<id>, והריבילד הבא יאסוף אותו.
+  if (!ids || ids.indexOf(id) !== -1) return;
+  ids.push(id);
+  try { await env.SUBS.put(IDX, JSON.stringify(ids)); } catch (e) { /* ignore */ }
+}
+
+async function removeFromIndex(env, id) {
+  const ids = await readIndex(env);
+  if (!ids) return;
+  const at = ids.indexOf(id);
+  if (at === -1) return;
+  ids.splice(at, 1);
+  try { await env.SUBS.put(IDX, JSON.stringify(ids)); } catch (e) { /* ignore */ }
+}
+
+// ------------------------------------------------------------
 //  HTTP
 // ------------------------------------------------------------
 export default {
@@ -82,7 +141,11 @@ export default {
         hasKeys: !!env.VAPID_PUBLIC_KEY,
         lastCron: beat && beat.at || null,
         lastCronSent: beat && beat.sent || 0,
-        lastCronSubs: beat && beat.subs || 0
+        // -1 = ה-cron רץ אבל לא הצליח לקרוא את רשימת המנויים
+        lastCronSubs: beat && typeof beat.subs === 'number' ? beat.subs : 0,
+        // הדופק נכתב אחת ל-10 דקות ולא בכל דקה (חיסכון במכסת כתיבה),
+        // ולכן דופק בן 9 דקות הוא תקין ולא סימן לשרת מושבת.
+        lastCronMaxAgeMin: 10
       }, 200, origin);
     }
 
@@ -175,6 +238,7 @@ export default {
         updatedAt: Date.now()
       };
       await env.SUBS.put('sub:' + id, JSON.stringify(rec));
+      await addToIndex(env, id);
       return json({ ok: true, id: id, slots: rec.slots.length, lastSlot: rec.slots[rec.slots.length - 1] || null }, 200, origin);
     }
 
@@ -208,6 +272,7 @@ export default {
       let b;
       try { b = await request.json(); } catch (e) { return json({ error: 'JSON לא תקין' }, 400, origin); }
       await env.SUBS.delete('sub:' + b.id);
+      await removeFromIndex(env, b.id);
       return json({ ok: true }, 200, origin);
     }
 
@@ -245,12 +310,21 @@ async function runSchedule(env) {
   try {
     if (!env.VAPID_PUBLIC_KEY) return;
     const vapid = vapidFrom(env);
-    const list = await env.SUBS.list({ prefix: 'sub:' });
-    subs = list.keys.length;
+    // פעם ביום בונים את האינדקס מחדש מ-list — רשת ביטחון יחידה מפני
+    // סחיפה בינו לבין המפתחות שבפועל. list אחד ביום מול מכסה של 1,000.
+    const ids = (now.getUTCHours() === 3 && now.getUTCMinutes() === 0)
+      ? (await rebuildIndex(env)) || (await readIndex(env))
+      : await readIndex(env);
 
-    for (const entry of list.keys) {
+    // אין רשימה אמינה (ה-list נכשל והאינדקס עוד לא נבנה) — מוטב לא
+    // לעשות כלום בריצה הזאת מלדווח בשקט על אפס מנויים.
+    if (!ids) { subs = -1; return; }
+    subs = ids.length;
+
+    for (const id of ids) {
+      const name = 'sub:' + id;
       let rec;
-      try { rec = await env.SUBS.get(entry.name, 'json'); } catch (e) { continue; }
+      try { rec = await env.SUBS.get(name, 'json'); } catch (e) { continue; }
       if (!rec || !rec.slots || !rec.slots.length) continue;
       if (rec.dead) continue;   // מסומן כפג — נרפא רק ברישום מחדש מהאפליקציה
 
@@ -281,7 +355,7 @@ async function runSchedule(env) {
         if (r.ok) {
           sent++;
           rec.lastSentAt = new Date().toISOString();
-          await env.SUBS.put(entry.name, JSON.stringify(rec));
+          await env.SUBS.put(name, JSON.stringify(rec));
         }
         if (r.gone) {
           // לא מוחקים — מסמנים. מחיקה שקטה גרמה לכך שהאפליקציה
@@ -289,19 +363,26 @@ async function runSchedule(env) {
           rec.dead = true;
           rec.deadReason = 'המנוי פג או בוטל (' + r.status + ')';
           rec.deadAt = new Date().toISOString();
-          await env.SUBS.put(entry.name, JSON.stringify(rec));
+          await env.SUBS.put(name, JSON.stringify(rec));
           break;
         }
         if (!r.ok) console.log('push failed', r.status, r.body);
       }
     }
   } finally {
-    // נכתב תמיד, גם אם שליחה נכשלה — זו עדות שה-cron אכן רץ
-    try {
-      await env.SUBS.put('meta:lastCron', JSON.stringify({
-        at: now.toISOString(), sent: sent, subs: subs, build: BUILD
-      }));
-    } catch (e) { /* ignore */ }
+    // דופק ה-cron — עדות שה-cron אכן רץ, גם כששליחה נכשלה.
+    //
+    // פעם זה נכתב בכל דקה: 1,440 כתיבות ביום מול מכסת כתיבה חינמית
+    // של 1,000. כלומר גם מכסת הכתיבה נגמרה כל יום, ולא רק ה-list.
+    // עכשיו: אחת ל-10 דקות, ותמיד כשבאמת נשלחה תזכורת — הדופק נשאר
+    // טרי דיו כדי לענות "האם השרת רץ", והכתיבות יורדות ל-~150 ביום.
+    if (sent > 0 || now.getUTCMinutes() % 10 === 0) {
+      try {
+        await env.SUBS.put('meta:lastCron', JSON.stringify({
+          at: now.toISOString(), sent: sent, subs: subs, build: BUILD
+        }));
+      } catch (e) { /* ignore */ }
+    }
   }
 }
 
