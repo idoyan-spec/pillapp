@@ -89,7 +89,8 @@ function wire() {
       const parts = d.slotId.split('|');
       const slots = Sch.slotsForDate(parts[1]);
       const slot = slots.find(s => s.id === d.slotId);
-      if (slot) UI.openReminder(slot, 0);
+      // נפתח מלחיצה על התראה — ההתראה עצמה אינה יכולה לדבר, אז האפליקציה מקריאה
+      if (slot) { UI.openReminder(slot, 0); if (!slot.status) N.speakReminderSoon(slot); }
     }
     UI.render();
   });

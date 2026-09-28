@@ -354,6 +354,7 @@ main { padding: 14px; max-width: 720px; margin: 0 auto; }
   transition: transform .08s ease, opacity .15s ease;
 }
 .btn:active { transform: scale(.96); }
+a.btn { text-decoration: none; }
 .btn.ghost   { background: var(--paper-2); color: var(--ink); border-color: var(--line-2); }
 .btn.ok      { background: var(--ok); border-color: var(--ok); color: #fff; }
 .btn.due     { background: var(--due); border-color: var(--due); color: #fff; }

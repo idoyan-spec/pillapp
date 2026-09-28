@@ -3,7 +3,7 @@
 // ============================================================
 import * as Mirror from './mirror.js';
 
-export const BUILD = '2026-09-05 21:20 v14 sound-privacy-install';
+export const BUILD = '2026-09-28 21:40 v15 voice-reminder';
 
 const KEY = 'pillapp.state.v1';
 

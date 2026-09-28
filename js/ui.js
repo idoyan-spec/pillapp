@@ -865,6 +865,36 @@ function renderSettings() {
       'אפשר לשנות אותו בהגדרות ההתראות של המכשיר.'
   }));
 
+  // ---- קול גם כשהאפליקציה סגורה ----
+  // התראה מה-SW אינה יכולה לדבר. הדרך היחידה לשמוע קול בטלפון נעול היא
+  // להגדיר את הקובץ הזה כצליל ההתראות של האפליקציה במכשיר עצמו.
+  // הנוסח כללי ובלי שם תרופה — בטוח גם במצב דיסקרטי.
+  c2.appendChild(el('div', { class: 'lbl', text: '🔊 תזכורת בקול גם כשהאפליקציה סגורה', style: 'font-weight:700;margin-bottom:6px' }));
+  c2.appendChild(el('div', {
+    class: 'hint', style: 'margin-bottom:8px',
+    text: 'כשהאפליקציה סגורה היא לא יכולה לדבר — הטלפון משמיע רק את צליל ההתראות. ' +
+      'אבל אפשר להפוך את צליל ההתראות להקלטה "תזכורת. הגיע הזמן לקחת את התרופה":'
+  }));
+  const voiceRow = el('div', { class: 'row', style: 'gap:8px;margin-bottom:8px' }, [
+    el('button', {
+      class: 'btn ghost', html: '▶ השמעה',
+      onclick: () => { try { new Audio('assets/reminder-voice.mp3').play(); } catch (e) { /* ignore */ } }
+    }),
+    el('a', {
+      class: 'btn grow', html: '⬇ הורדת הקובץ',
+      href: 'assets/reminder-voice.mp3', download: 'pillApp-reminder.mp3'
+    })
+  ]);
+  c2.appendChild(voiceRow);
+  c2.appendChild(el('div', {
+    class: 'hint', style: 'margin-bottom:16px',
+    html: '<b>ב-Android:</b> ' + T.g('הורידי', 'הורד') + ' את הקובץ, ואז: הגדרות הטלפון ← אפליקציות ← ' +
+      '"התרופות שלי" ← התראות ← ' + T.g('בחרי', 'בחר') + ' את סוג ההתראה ← צליל ← ' +
+      T.g('בחרי', 'בחר') + ' את "pillApp-reminder" (אם הוא לא מופיע ברשימה — ' + T.g('העבירי', 'העבר') +
+      ' אותו מתיקיית Download לתיקיית Notifications).<br>' +
+      '<b>ב-iPhone</b> אין אפשרות כזאת לאפליקציות רשת. לחיצה על ההתראה פותחת את התזכורת ומקריאה אותה.'
+  }));
+
   // ---- מה נאמר ומה מופיע על מסך נעול ----
   c2.appendChild(el('div', { class: 'lbl', text: 'מה נשמע ומה מופיע על המסך', style: 'font-weight:700;margin-bottom:6px' }));
   const privWrap = el('div', { style: 'margin-bottom:6px' });

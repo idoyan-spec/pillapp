@@ -1,7 +1,7 @@
 // ============================================================
 //  sw.js  —  עבודה בלי רשת + טיפול בלחיצה על התראה
 // ============================================================
-const BUILD = '2026-09-05 21:20 v14 sound-privacy-install';
+const BUILD = '2026-09-28 21:40 v15 voice-reminder';
 const CACHE = 'pillapp-' + BUILD;
 
 const SHELL = [
@@ -28,7 +28,8 @@ const SHELL = [
   './js/perms.js',
   './js/legal.js',
   './assets/icon-192.png',
-  './assets/icon-512.png'
+  './assets/icon-512.png',
+  './assets/reminder-voice.mp3'
 ];
 
 self.addEventListener('install', e => {

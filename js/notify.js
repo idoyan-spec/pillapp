@@ -313,11 +313,32 @@ function fireReminder(slot, nagCount) {
       ]
     });
   }
-  if (discreet) {
+  speakReminder(slot, nagCount);
+}
+
+/** הקראת תזכורת מנה — מכבדת את המצב הדיסקרטי (קול נשמע בחדר) */
+export function speakReminder(slot, nagCount) {
+  const isNag = nagCount > 0;
+  if (T.isDiscreet()) {
     speak(isNag ? T.discreetNagSpeech(nagCount - 1) : T.discreetSpeech(slot.id));
   } else {
-    speak(isNag ? T.nagSpeech(med, nagCount - 1) : T.reminderSpeech(med, slot.id));
+    speak(isNag ? T.nagSpeech(slot.med, nagCount - 1) : T.reminderSpeech(slot.med, slot.id));
   }
+}
+
+/**
+ * פתיחה מלחיצה על התראה: הדף נפתח עכשיו ואולי עוד אין לו "מחוות משתמש",
+ * ו-Chrome עלול לבלוע הקראה בלי מחווה. מנסים מיד; אם הקול לא התחיל —
+ * המגע הראשון במסך מקריא.
+ */
+export function speakReminderSoon(slot) {
+  if (!state.settings.voiceEnabled) return;
+  speakReminder(slot, 0);
+  setTimeout(() => {
+    try { if (speechSynthesis.speaking || speechSynthesis.pending) return; } catch (e) { return; }
+    const once = () => { document.removeEventListener('pointerdown', once, true); speakReminder(slot, 0); };
+    document.addEventListener('pointerdown', once, true);
+  }, 800);
 }
 
 // ---------- יום שקט (שבת / חג) ----------
